@@ -1,4 +1,4 @@
-# LX Source Downloader
+﻿# LX Source Downloader
 
 [![build](https://github.com/maygo88/lx-source-downloader/actions/workflows/build.yml/badge.svg)](https://github.com/maygo88/lx-source-downloader/actions/workflows/build.yml)
 [![release](https://img.shields.io/github/v/release/maygo88/lx-source-downloader)](https://github.com/maygo88/lx-source-downloader/releases)
@@ -53,7 +53,7 @@ custom sources — and reads/writes the sources **already installed** in your LX
 | `已装 vX` | Local file and installed script are byte-identical |
 | `待同步 vX` | Local differs and is **not older** than the installed one — safe to push |
 | `洛雪更新 vX` | Installed version is newer (sources self-update) — sync skips it to avoid a downgrade |
-| `未安装` | Not present in LX Music |
+| `未安装` | Not present in LX Music — sync creates a new entry from the script header |
 | `仅洛雪 vX` | Exists only in LX Music; tick it and run *Check & update* to export it as a local `.js` |
 
 ## How LX Music stores custom sources

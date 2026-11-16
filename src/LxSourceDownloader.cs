@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Diagnostics;
@@ -976,6 +976,22 @@ namespace LxSourceDownloader
             Match m = Regex.Match(text ?? "", "@version\\s+([^\\r\\n]+)");
             return m.Success ? m.Groups[1].Value.Trim() : "";
         }
+        private static string ScriptMeta(string text, string key)
+        {
+            Match m = Regex.Match(text ?? "", "@" + key + "\\s+([^\\r\\n]+)");
+            return m.Success ? m.Groups[1].Value.Trim() : "";
+        }
+
+        private static readonly Random _rnd = new Random();
+
+        private static string NewLxId()
+        {
+            int n;
+            lock (_rnd) { n = _rnd.Next(100, 1000); }
+            long ms = (long)(DateTime.UtcNow - new DateTime(1970, 1, 1)).TotalMilliseconds;
+            return "user_api_" + n + "_" + ms;
+        }
+
         private static string VerLabel(string v)
         {
             if (string.IsNullOrEmpty(v)) return "?";
@@ -1193,7 +1209,10 @@ namespace LxSourceDownloader
             }
 
             StringBuilder changed = new StringBuilder();
-            int n = 0, same = 0, skipped = 0, older = 0;
+            int updated = 0, added = 0, same = 0, skipped = 0, older = 0;
+            List<object> newEntries = new List<object>();
+            object[] existing = _lxRoot.ContainsKey("userApis") ? _lxRoot["userApis"] as object[] : null;
+            if (existing == null) existing = new object[0];
             foreach (SourceItem it in _items)
             {
                 if (it.LxOnly) continue;
@@ -1204,16 +1223,35 @@ namespace LxSourceDownloader
                 catch { skipped++; continue; }
                 string name = ScriptName(text);
                 if (name.Length == 0) name = it.Name;
-                if (!_lxByName.ContainsKey(name)) { skipped++; continue; }
-
                 string localHash = Sha256(Encoding.UTF8.GetBytes(text));
+                string ver = ScriptVersion(text);
+
+                if (!_lxByName.ContainsKey(name))
+                {
+                    Dictionary<string, object> created = new Dictionary<string, object>();
+                    created["id"] = NewLxId();
+                    created["name"] = name;
+                    created["description"] = ScriptMeta(text, "description");
+                    created["version"] = ver.Length > 0 ? ver : "1.0";
+                    created["author"] = ScriptMeta(text, "author");
+                    created["homepage"] = ScriptMeta(text, "homepage");
+                    created["allowShowUpdateAlert"] = false;
+                    created["script"] = EncodeScript(text);
+                    newEntries.Add(created);
+                    _lxByName[name] = created;
+                    _lxHash[name] = localHash;
+                    _lxVersion[name] = Convert.ToString(created["version"]);
+                    added++;
+                    changed.AppendLine("  · " + name + "（新增 " + VerLabel(Convert.ToString(created["version"])) + "）");
+                    continue;
+                }
+
                 if (_lxHash.ContainsKey(name) && string.Equals(localHash, _lxHash[name], StringComparison.OrdinalIgnoreCase))
                 {
                     same++;
                     continue;
                 }
 
-                string ver = ScriptVersion(text);
                 string lxVer = _lxVersion.ContainsKey(name) ? _lxVersion[name] : "";
                 if (CompareVersions(ver, lxVer) < 0)
                 {
@@ -1227,16 +1265,24 @@ namespace LxSourceDownloader
                 if (ver.Length > 0) entry["version"] = ver;
                 _lxHash[name] = localHash;
                 if (ver.Length > 0) _lxVersion[name] = ver;
-                n++;
+                updated++;
                 changed.AppendLine("  · " + name + (ver.Length > 0 ? " → " + VerLabel(ver) : ""));
             }
 
-            if (n == 0)
+            int changedCount = added + updated;
+            if (changedCount == 0)
             {
-                Log("没有需要同步的音源（已一致 " + same + " 个，跳过 " + skipped + " 个，需降级而忽略 " + older + " 个）。");
+                Log("没有需要同步的音源（已一致 " + same + " 个，本地缺文件 " + skipped + " 个，降级忽略 " + older + " 个）。");
                 SetStatus("洛雪里的音源已经是最新，无需同步。");
                 RefreshLocalState();
                 return;
+            }
+
+            if (added > 0)
+            {
+                List<object> all = new List<object>(existing);
+                all.AddRange(newEntries);
+                _lxRoot["userApis"] = all.ToArray();
             }
 
             try
@@ -1246,10 +1292,10 @@ namespace LxSourceDownloader
                 JavaScriptSerializer ser = new JavaScriptSerializer();
                 ser.MaxJsonLength = int.MaxValue;
                 File.WriteAllText(_lxPath, ser.Serialize(_lxRoot), new UTF8Encoding(false));
-                Log("已写入 " + n + " 个音源到洛雪（原文已备份为 user_api.json.bak-" + stamp + "，downgrade-skipped=" + older + "）：");
+                Log("已写入洛雪：新增 " + added + " 个，更新 " + updated + " 个（原文已备份为 user_api.json.bak-" + stamp + "，降级忽略 " + older + " 个）：");
                 Log(changed.ToString().TrimEnd());
-                Log("请重启洛雪，在「设置 → 自定义源管理」里确认版本号已更新。");
-                SetStatus("已同步 " + n + " 个到洛雪，重启洛雪生效。");
+                Log("请重启洛雪，在「设置 → 自定义源管理」里确认音源与版本号。");
+                SetStatus("已同步到洛雪（新增 " + added + " / 更新 " + updated + "），重启洛雪生效。");
             }
             catch (Exception ex)
             {

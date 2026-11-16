@@ -1,4 +1,4 @@
-# 洛雪音源下载器 / LX Source Downloader
+﻿# 洛雪音源下载器 / LX Source Downloader
 
 [![build](https://github.com/maygo88/lx-source-downloader/actions/workflows/build.yml/badge.svg)](https://github.com/maygo88/lx-source-downloader/actions/workflows/build.yml)
 [![release](https://img.shields.io/github/v/release/maygo88/lx-source-downloader)](https://github.com/maygo88/lx-source-downloader/releases)
@@ -163,7 +163,7 @@ https://raw.githubusercontent.com/            ← 直连，通常最不稳定
 | `已装 vX` | 本地文件与洛雪里**字节完全相同** | 跳过（无需变动） |
 | `待同步 vX` | 内容不同，且本地版本 **不比** 洛雪旧 | 写入、更新版本号 |
 | `洛雪更新 vX` | 洛雪里的版本**更新**（脚本会自更新） | **跳过**，避免降级 |
-| `未安装` | 洛雪里没有这个音源 | 跳过（只在本地） |
+| `未安装` | 洛雪里没有这个音源 | **新增**：按脚本头部创建条目（清空洛雪后靠这条恢复） |
 | `仅洛雪 vX` | 只在洛雪里有，仓库没有 | 反向操作：勾选后「检查并更新」会导出成本地 `.js` |
 
 #### 同步的安全措施

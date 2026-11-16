@@ -1,8 +1,23 @@
-# Changelog
+﻿# Changelog
 
 All notable changes to this project are documented here. The format loosely follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
+
+## [1.2.1] — 2026-11-16
+
+### Fixed
+
+- **Sync to LX Music now adds missing sources instead of silently skipping them.** If a source
+  exists locally but not in LX Music (for example after deleting all custom sources), syncing
+  creates a new `userApis` entry with a generated `id` and `name` / `version` / `author` /
+  `description` / `homepage` taken from the script header. Previously every such source was
+  counted as "skipped" and the summary read like nothing was wrong.
+
+### Changed
+
+- The sync summary now separates **added**, **updated**, **already in sync**, **local file
+  missing** and **skipped to avoid a downgrade**.
 
 ## [Unreleased]
 
