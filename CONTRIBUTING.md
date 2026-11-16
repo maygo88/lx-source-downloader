@@ -1,4 +1,4 @@
-﻿# Contributing
+# Contributing
 
 Thanks for taking the time to improve this project. Everything here — code, docs, translations, bug reports —
 is welcome.
@@ -10,6 +10,19 @@ is welcome.
 - **Maintain the mirror list** — GitHub mirrors die often; PRs that add working ones are valuable.
 - **Improve robustness** — retries, timeouts, partial downloads, proxy handling.
 - **Improve the build/CI** — smaller binaries, better release automation.
+
+## AI-assisted development
+
+Most of this codebase was generated and iterated by [DeepSeek Harness](https://github.com/deepseek-ai), an AI
+coding agent, with the maintainer driving requirements and verification. That has two practical consequences
+for contributors:
+
+- Review diffs the way you would review any third-party patch — the fact that a change "looks plausible" is
+  not evidence that it works.
+- Tests and reproductions matter more than usual. If you touch the LX Music I/O, show the round-trip test
+  you ran (against a copy of `user_api.json`).
+
+The code is ordinary C# 5 / .NET Framework; there is nothing exotic to learn.
 
 ## Development setup
 

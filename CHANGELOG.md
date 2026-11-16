@@ -1,8 +1,18 @@
-﻿# Changelog
+# Changelog
 
 All notable changes to this project are documented here. The format loosely follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
+
+## [Unreleased]
+
+### Documentation
+
+- Expanded `README.zh-CN.md` into a full Chinese guide: problem statement, per-control UI reference,
+  download/hash pipeline, mirror scheduling, the five LX Music states, sync safeguards, `user_api.json`
+  format (`gz_` is zlib), `config.ini` reference, CLI, build and FAQ.
+- Documented that the codebase is generated and iterated by DeepSeek Harness under maintainer review
+  (README, CONTRIBUTING and CHANGELOG).
 
 ## [1.2.0] — 2026-11-16
 

@@ -1,4 +1,4 @@
-﻿# LX Source Downloader
+# LX Source Downloader
 
 [![build](https://github.com/maygo88/lx-source-downloader/actions/workflows/build.yml/badge.svg)](https://github.com/maygo88/lx-source-downloader/actions/workflows/build.yml)
 [![release](https://img.shields.io/github/v/release/maygo88/lx-source-downloader)](https://github.com/maygo88/lx-source-downloader/releases)
@@ -159,6 +159,20 @@ deliberately refuses to downgrade. Delete the file locally and re-run if you rea
 **The upstream repository moved.**
 
 Change the `Repo` constant at the top of `src/LxSourceDownloader.cs` and rebuild.
+
+## How this project is built
+
+The C# source, build script, CI workflow, icon and documentation are **generated and iterated mainly by
+[DeepSeek Harness](https://github.com/deepseek-ai)**, an AI coding agent, under the maintainer's direction.
+The maintainer defines the requirements, reviews every change, runs the real-machine checks (clean-clone
+build, `/auto`, GUI clicks, LX Music round-trip against a sandboxed copy of `user_api.json`) and signs off
+each release.
+
+Treat the repository like any third-party code: it is plain C# you can read, build and modify, but review it
+the way you would review anything that writes to your music app's data file. Questions about *why* something
+is implemented a certain way are welcome as issues.
+
+See [README.zh-CN.md](README.zh-CN.md) for the fuller Chinese documentation.
 
 ## Disclaimer
 
