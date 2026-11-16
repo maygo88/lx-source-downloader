@@ -1,4 +1,4 @@
-﻿# 洛雪音源下载器 / LX Source Downloader
+# 洛雪音源下载器 / LX Source Downloader
 
 [![build](https://github.com/maygo88/lx-source-downloader/actions/workflows/build.yml/badge.svg)](https://github.com/maygo88/lx-source-downloader/actions/workflows/build.yml)
 [![release](https://img.shields.io/github/v/release/maygo88/lx-source-downloader)](https://github.com/maygo88/lx-source-downloader/releases)
@@ -59,7 +59,8 @@
 - **加速站调度**：5 个镜像依次探测（`gh-proxy.org`、`ghproxy.net`、`gh.llkk.cc`、`github.moeyy.xyz`、直连），
   记住第一个可用的；失败自动重新探测。
 - **内容校验**：小于 5 KB 或开头是 `<`（错误页）的响应直接丢弃，不会把 HTML 存成 `.js`。
-- **洛雪联动**：读取/写入 `%APPDATA%\lx-music-desktop\LxDatas\user_api.json`。
+- **洛雪联动**：读取/写入 `%APPDATA%\lx-music-desktop\LxDatas\user_api.json`；缺失的音源会自动新增
+  （洛雪被清空也能一键恢复）。
 - **双向发现**：既列仓库新增目录，也列"只在洛雪里存在"的音源，并可导出成本地 `.js`。
 - **静默模式**：`/auto` 无窗口更新，结果写 `auto.log`。
 - **防御式启动**：阻断未签名 DLL 注入，规避游戏 overlay 导致的启动崩溃。
@@ -175,6 +176,18 @@ https://raw.githubusercontent.com/            ← 直连，通常最不稳定
 | 防降级 | 本地版本低于洛雪版本时跳过，绝不把新版本覆盖成旧的 |
 | 置灰保护 | 洛雪正在运行时弹窗要求先退出（它退出时会用内存副本覆盖磁盘） |
 | 可重定向 | 环境变量 `LX_TOOL_DATA` 可指向别的 `user_api.json`（便携版、测试用） |
+
+#### 清空洛雪后怎么恢复
+
+洛雪里把自定义源全删掉后，`user_api.json` 会变成 `{"userApis": []}`。此时点「同步到洛雪」，
+程序会把本地目录里的每个 `.js` 作为**新条目**写回去（1.2.1 起支持）：
+
+1. 完全退出洛雪（窗口 + 托盘图标）
+2. 点「同步到洛雪」，日志应显示 `已写入洛雪：新增 N 个，更新 0 个`
+3. 重开洛雪 → 设置 → 自定义源管理，确认列表
+
+> 只写**本地确实存在 `.js` 文件**的音源。列表里状态为「未下载」的行没有本地内容，会以
+> "本地缺文件"跳过——先点「检查并更新」补齐，再同步。
 
 ### 4. 双向发现
 
@@ -315,6 +328,20 @@ A：说明洛雪里的是更新版本（这类脚本会自己检查更新）。�
 **Q：点「同步到洛雪」没反应 / 提示要退出洛雪？**
 A：洛雪运行时会持有内存副本，退出时会把旧数据写回。请完全退出（包括托盘图标）再同步，
 程序会自动备份原文件。
+
+**Q：同步时报「对路径 …user_api.json.bak-… 的访问被拒绝」？**
+A：这是**进程权限受限**，不是 Windows 权限问题。典型场景：程序被某个工具、IDE、沙箱或远程会话以
+受限令牌启动——这类进程连自己的 `%TEMP%` 都写不了，而目标目录的 ACL 本身完全正常。
+判断方法：从**资源管理器直接双击 exe** 启动（不经过任何工具），再试一次。
+若仍然失败，在「以管理员身份运行」的终端里启动本程序也能排除权限因素。
+
+**Q：同步成功了，但洛雪里还是看不到？**
+A：洛雪只在**启动时**读一次 `user_api.json`。同步后必须完全退出（含托盘图标）再重开。
+若仍然没有，对照日志里的"新增"数量是否符合预期。
+
+**Q：本地列表有 20 个，为什么只写进去 17 个？**
+A：只写本地存在 `.js` 文件的音源。剩下的若状态是「未下载」，或下载时被判为"内容无效"（镜像返回了
+错误页，日志里会写 `内容无效（xxx 字节），已跳过`），就没有内容可写。先「检查并更新」补齐，再同步。
 
 **Q：上游仓库换地址了怎么办？**
 A：改 `src/LxSourceDownloader.cs` 顶部的 `Repo` 常量与 `Api` 常量，重新构建。

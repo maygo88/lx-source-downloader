@@ -1,4 +1,4 @@
-﻿# Changelog
+# Changelog
 
 All notable changes to this project are documented here. The format loosely follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
@@ -28,6 +28,10 @@ All notable changes to this project are documented here. The format loosely foll
   format (`gz_` is zlib), `config.ini` reference, CLI, build and FAQ.
 - Documented that the codebase is generated and iterated by DeepSeek Harness under maintainer review
   (README, CONTRIBUTING and CHANGELOG).
+- Added a Chinese walkthrough for recovering a wiped LX Music installation (sync now re-creates missing
+  entries) and three troubleshooting entries: `access denied` on the backup file (restricted-token
+  environments), "synced but LX Music shows nothing" (LX reads the file only at startup) and "why fewer
+  sources were written than listed" (sources without a local `.js` are skipped).
 
 ## [1.2.0] — 2026-11-16
 
