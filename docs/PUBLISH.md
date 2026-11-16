@@ -10,7 +10,7 @@
 在你的终端里执行：
 
 ```powershell
-cd D:\POE2\lx-source-downloader
+cd D:\hsdemo\lx-source-downloader
 gh auth login --web --git-protocol https
 ```
 
