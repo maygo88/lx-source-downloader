@@ -1,0 +1,47 @@
+name: build
+
+on:
+  push:
+    branches: [ main ]
+    tags: [ 'v*' ]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build
+        shell: pwsh
+        run: ./build.ps1
+
+      - name: Package
+        shell: pwsh
+        run: |
+          $dist = 'dist'
+          Copy-Item README.md, README.zh-CN.md, LICENSE -Destination $dist
+          Copy-Item CHANGELOG.md -Destination $dist
+          New-Item -ItemType Directory -Force -Path "$dist/docs" | Out-Null
+          Copy-Item docs/screenshot.png -Destination "$dist/docs"
+          Compress-Archive -Path "$dist/*" -DestinationPath LxSourceDownloader-win-x64.zip -Force
+          Get-ChildItem . -Filter *.zip | Select-Object Name, Length
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: LxSourceDownloader-win-x64
+          path: LxSourceDownloader-win-x64.zip
+          if-no-files-found: error
+
+      - name: Publish release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: LxSourceDownloader-win-x64.zip
+          generate_release_notes: true

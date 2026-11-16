@@ -1,0 +1,24 @@
+# Build output
+dist/
+bin/
+obj/
+*.exe
+*.pdb
+*.zip
+
+# Local application state — must never be committed
+config.ini
+auto.log
+crash.log
+lx-sources/
+*.bak-*
+
+# IDEs
+.vs/
+.idea/
+*.user
+*.suo
+
+# OS
+Thumbs.db
+Desktop.ini
