@@ -25,6 +25,7 @@
 - [config.ini 参考](#configini-参考)
 - [命令行](#命令行)
 - [从源码构建](#从源码构建)
+- [测试](#测试)
 - [常见问题](#常见问题)
 - [项目结构](#项目结构)
 - [参与贡献](#参与贡献)
@@ -54,7 +55,7 @@
 
 ## 能力清单
 
-- **单文件 46 KB，免安装**：基于 Windows 10/11 自带的 .NET Framework 4.8，不下载任何运行时。
+- **单文件不到 50 KB，免安装**：基于 Windows 10/11 自带的 .NET Framework 4.8，不下载任何运行时。
 - **内容哈希更新**：下载后计算 SHA-256，与本地记录比对；没变的不写盘，变了的只替换那一个文件。
 - **加速站调度**：5 个镜像依次探测（`gh-proxy.org`、`ghproxy.net`、`gh.llkk.cc`、`github.moeyy.xyz`、直连），
   记住第一个可用的；失败自动重新探测。
@@ -312,6 +313,30 @@ pwsh ./build.ps1          # 产物：dist/LxSourceDownloader.exe
 
 ---
 
+## 测试
+
+`tests/smoke.ps1` 用一份**沙箱副本**跑真实 exe（`config.ini` 与 `user_api.json` 都复制到临时目录，
+并用 `LX_TOOL_DATA` 指向副本），**不会碰你真实的洛雪数据**：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\tests\smoke.ps1            # 全部，含界面驱动的同步往返
+powershell -ExecutionPolicy Bypass -File .\tests\smoke.ps1 -SkipGui   # 只跑无界面部分（CI 跑的就是这个）
+```
+
+覆盖的都是真实踩过的坑：
+
+| 用例 | 断言 |
+| --- | --- |
+| `user_api.json` 损坏 | 程序仍能启动，不产生 `crash.log` |
+| `/auto` 且一个都没勾选 | 进程自己退出，并写出 `auto.log` |
+| 同步往返 | 新增条目带上头部元数据、内容逐字节一致、生成备份、二次同步是空操作、旧版本不覆盖新版 |
+
+> 界面用例通过 `BM_CLICK` 驱动真实窗口，需要可交互桌面；构建机上没有桌面时加 `-SkipGui`。
+
+---
+
+---
+
 ## 常见问题
 
 **Q：第一次运行被 SmartScreen 拦住了？**
@@ -359,13 +384,15 @@ A：界面下方日志框；静默模式看 `auto.log`；异常堆栈写 `crash.
 ```
 build.ps1                   # csc 构建脚本
 publish.ps1                 # 建仓 + 推送辅助（gh / 显式 URL / 代理）
-src/LxSourceDownloader.cs   # 全部逻辑（约 1400 行，单文件）
-src/AssemblyInfo.cs         # 版本元数据
+src/LxSourceDownloader.cs   # 全部逻辑（约 1500 行，单文件）
+src/AssemblyInfo.cs         # 版本元数据（版本号唯一来源）
 assets/icon.ico             # 应用图标
+tests/smoke.ps1             # 端到端回归测试（沙箱 user_api.json）
 docs/screenshot.png         # README 截图
 docs/PUBLISH.md             # 发布到 GitHub 的三种方式
 legacy/                     # 最早的 ps1/cmd 脚本，仅作参考
-.github/workflows/build.yml # CI：每次推送构建，打 v* 标签发 Release
+CONTRIBUTING.md             # 贡献指南：代码约束、代码地图、测试清单
+.github/workflows/build.yml # CI：每次推送构建 + 冒烟测试，打 v* 标签发 Release
 ```
 
 ---
@@ -416,4 +443,4 @@ DLL 注入、为什么用 zlib 而不是 gzip），Issue 里问也可以。
 
 ## 许可
 
-[MIT](LICENSE) © 2026 maygo88 and contributors
+[MIT](LICENSE) © 2026 haungsheng and contributors

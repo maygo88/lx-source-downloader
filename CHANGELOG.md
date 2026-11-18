@@ -4,6 +4,52 @@ All notable changes to this project are documented here. The format loosely foll
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [1.2.2] — 2026-11-18
+
+### Fixed
+
+- **A corrupt or half-written `user_api.json` no longer kills the app at startup.** The
+  constructor tried to log before the log box had been created, so a JSON parse error
+  escalated into a `NullReferenceException` and the process exited without ever showing a
+  window. The UI is now built first, logging is null-safe, and a failed startup shows a
+  readable message instead of vanishing silently.
+- **`/auto` no longer hangs when no source is ticked.** Silent mode only wrote `auto.log` and
+  closed the window after a real update; with an empty selection it kept an invisible process
+  alive forever — one leaked process per Task Scheduler run.
+- **The 洛雪 column no longer reports `待同步` for a source that is already installed.** Local
+  scripts were hashed as raw file bytes while LX Music entries were hashed as decoded text,
+  so every local file carrying a UTF-8 BOM (i.e. everything exported by 1.2.x) never matched
+  and looked permanently out of sync. Both sides are now hashed as decoded UTF-8 text.
+- Sources exported from LX Music are written without a BOM, matching the download path.
+
+### Changed
+
+- `user_api.json` is written to a temporary file and swapped in with `File.Replace`, so a
+  crash or power loss during the write can no longer leave a truncated data file.
+- The output folder can no longer be changed while an update is running.
+- Layout is derived from the real control sizes instead of hard-coded pixel coordinates, so
+  the bottom button row no longer overlaps when Windows scales fonts and controls (DPI
+  override / 125–200 % scaling).
+- Responses larger than 8 MB are rejected instead of being buffered in memory.
+- `crash.log` falls back to `%TEMP%\LxSourceDownloader` when the exe folder is read-only
+  (e.g. an unzipped copy under `Program Files`).
+
+### Added
+
+- `tests/smoke.ps1` — end-to-end regression tests that drive the real exe against a sandboxed
+  `user_api.json`: corrupt-data startup, `/auto` exit, and a sync round trip (add, header
+  metadata, byte-for-byte content, backup, idempotency, downgrade protection).
+- CI runs the headless subset of those tests on every push.
+
+### Documentation
+
+- Expanded `README.zh-CN.md` into a full Chinese guide: problem statement, per-control UI reference,
+  download/hash pipeline, mirror scheduling, the five LX Music states, sync safeguards, `user_api.json`
+  format (`gz_` is zlib), `config.ini` reference, CLI, build and FAQ.
+- Documented that the codebase is generated and iterated by DeepSeek Harness under maintainer review
+  (README, CONTRIBUTING and CHANGELOG).
+- Aligned the copyright holder in both READMEs with `LICENSE` and `AssemblyInfo.cs`.
+
 ## [1.2.1] — 2026-11-16
 
 ### Fixed
@@ -18,20 +64,6 @@ All notable changes to this project are documented here. The format loosely foll
 
 - The sync summary now separates **added**, **updated**, **already in sync**, **local file
   missing** and **skipped to avoid a downgrade**.
-
-## [Unreleased]
-
-### Documentation
-
-- Expanded `README.zh-CN.md` into a full Chinese guide: problem statement, per-control UI reference,
-  download/hash pipeline, mirror scheduling, the five LX Music states, sync safeguards, `user_api.json`
-  format (`gz_` is zlib), `config.ini` reference, CLI, build and FAQ.
-- Documented that the codebase is generated and iterated by DeepSeek Harness under maintainer review
-  (README, CONTRIBUTING and CHANGELOG).
-- Added a Chinese walkthrough for recovering a wiped LX Music installation (sync now re-creates missing
-  entries) and three troubleshooting entries: `access denied` on the backup file (restricted-token
-  environments), "synced but LX Music shows nothing" (LX reads the file only at startup) and "why fewer
-  sources were written than listed" (sources without a local `.js` are skipped).
 
 ## [1.2.0] — 2026-11-16
 
@@ -63,4 +95,6 @@ First public release.
 - Windows-only (WinForms + .NET Framework).
 - Default upstream repository is `pdone/lx-music-source`; mirrors need occasional maintenance.
 
+[1.2.2]: https://github.com/maygo88/lx-source-downloader/compare/v1.2.1...v1.2.2
+[1.2.1]: https://github.com/maygo88/lx-source-downloader/compare/v1.2.0...v1.2.1
 [1.2.0]: https://github.com/maygo88/lx-source-downloader/releases/tag/v1.2.0

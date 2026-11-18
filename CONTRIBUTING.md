@@ -31,9 +31,13 @@ Requirements: Windows 10/11 with .NET Framework 4.x (preinstalled). No Visual St
 ```powershell
 git clone https://github.com/maygo88/lx-source-downloader.git
 cd lx-source-downloader
-pwsh ./build.ps1        # produces dist/LxSourceDownloader.exe
+pwsh ./build.ps1              # produces dist/LxSourceDownloader.exe
+pwsh ./tests/smoke.ps1        # end-to-end checks against a sandboxed user_api.json
 ./dist/LxSourceDownloader.exe
 ```
+
+`tests/smoke.ps1 -SkipGui` runs only the headless checks (this is what CI runs); the GUI case
+drives the real window, so it needs an interactive desktop.
 
 ## Project constraints
 
@@ -70,17 +74,26 @@ These keep the "single portable exe" promise — please respect them:
   extract later.
 - Comments may be English or Chinese — English is preferred for new code.
 - Keep `AssemblyInfo.cs` as the single source of truth for the version.
+- **Encoding matters.** `src/*.cs` is compiled with `/codepage:65001`, so UTF-8 without a BOM is fine
+  there. A `.ps1` that contains non-ASCII text must be saved as **UTF-8 with BOM** — Windows
+  PowerShell 5.1 otherwise reads it as ANSI and the file stops parsing. `tests/smoke.ps1` is kept
+  ASCII-only on purpose so it runs under any console encoding.
 
 ## Testing checklist
 
 Before opening a PR, please verify:
 
 - [ ] `pwsh ./build.ps1` finishes with exit code 0 on a clean clone.
+- [ ] `pwsh ./tests/smoke.ps1` passes (all checks, or `-SkipGui` if you have no desktop session).
 - [ ] The app starts, lists sources, and `检查并更新` reports no crash.
-- [ ] Running `LxSourceDownloader.exe /auto` writes `auto.log` with a sensible summary.
+- [ ] Running `LxSourceDownloader.exe /auto` writes `auto.log` with a sensible summary — and
+      exits on its own even when nothing is ticked.
 - [ ] With LX Music installed, the 洛雪 column shows versions and `同步到洛雪` creates a
-  `user_api.json.bak-*` file. **Test against a copy of `user_api.json`, not your real one.**
+      `user_api.json.bak-*` file. **Test against a copy of `user_api.json`, not your real one.**
 - [ ] No new `crash.log` is generated.
+
+The LX Music cases are exactly what `tests/smoke.ps1` automates: it points `LX_TOOL_DATA` at a
+temporary copy, so it is safe to run at any time. Prefer extending it over testing by hand.
 
 ## Reporting bugs
 
@@ -100,3 +113,12 @@ Trim personal paths before pasting logs if you care about them.
 - Update `CHANGELOG.md` under an `Unreleased` heading for user-visible changes.
 - If you touch LX Music I/O, say in the PR how you tested the round-trip (a copy of the real file is fine).
 - By contributing you agree your changes are licensed under the MIT license.
+
+## Releasing
+
+CI builds and smoke-tests every push. A release is cut by tagging:
+
+1. Rename the `Unreleased` heading in `CHANGELOG.md` to the new version and date.
+2. Bump `AssemblyVersion` / `AssemblyFileVersion` in `src/AssemblyInfo.cs`.
+3. `git tag vX.Y.Z && git push origin main --tags` — the workflow refuses to publish when the tag
+   and the exe version disagree, which is what keeps the release zip honest.

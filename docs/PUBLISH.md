@@ -1,6 +1,6 @@
 ﻿# 发布到 GitHub
 
-这个仓库已经提交好并打了 `v1.2.0` 标签，只差"推到你的 GitHub 账号"这一步。
+这个仓库已经提交好并打了 `v1.2.0` / `v1.2.1` 标签，只差"推到你的 GitHub 账号"这一步。
 推送需要**你账号的授权**——别人无法代你推送，任何声称能"代发到你账号"的服务本质上都是要你的 token。
 
 下面三种方式任选其一。
@@ -83,5 +83,6 @@ git config --global --unset http.proxy   # 用完删掉
 
 - 仓库 **Settings → Topics** 填 `lx-music, winforms, csharp, windows, music`
 - **Actions** 标签页确认 `build` 工作流已启用（首次推送会自动跑一次构建）
-- 标签 `v1.2.0` 会触发 Release 工作流，自动生成 `LxSourceDownloader-win-x64.zip`
+- 推送 `v*` 标签会触发 Release 工作流，自动生成 `LxSourceDownloader-win-x64.zip`
+  （标签与 `src/AssemblyInfo.cs` 里的版本号不一致时，工作流会直接失败，不会发布错版本）
 - 若你的用户名不是 `maygo88`，记得改 `README.md` / `README.zh-CN.md` 里的徽章地址

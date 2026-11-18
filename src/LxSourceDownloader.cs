@@ -98,27 +98,68 @@ namespace LxSourceDownloader
             Application.ThreadException += delegate(object s, ThreadExceptionEventArgs e) { CrashLog(e.Exception); };
             AppDomain.CurrentDomain.UnhandledException += delegate(object s, UnhandledExceptionEventArgs e) { CrashLog(e.ExceptionObject as Exception); };
 
-            MainForm f = new MainForm();
+            // 构造函数会读取洛雪数据 / config.ini，任何异常都不该让进程静默消失
+            // （没有窗口、没有提示、只有 crash.log）。这里兜住并给出可读的提示。
+            MainForm f;
+            try
+            {
+                f = new MainForm();
+            }
+            catch (Exception ex)
+            {
+                CrashLog(ex);
+                if (!auto)
+                {
+                    try
+                    {
+                        MessageBox.Show("启动失败：" + ex.Message + "\r\n\r\n详情见 crash.log。",
+                            "洛雪音源下载器", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    }
+                    catch
+                    {
+                    }
+                }
+                return;
+            }
+
             if (auto)
             {
                 f.AutoMode = true;
                 f.WindowState = FormWindowState.Minimized;
                 f.ShowInTaskbar = false;
             }
-            Application.Run(f);
+            try
+            {
+                Application.Run(f);
+            }
+            catch (Exception ex)
+            {
+                CrashLog(ex);
+            }
         }
 
         private static void CrashLog(Exception ex)
         {
-            try
+            string body = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") + "  "
+                + (ex == null ? "(no exception object)" : ex.ToString()) + Environment.NewLine;
+
+            // exe 目录只读时（例如放进了 Program Files）退回到 %TEMP%，否则崩溃日志直接丢失。
+            string[] targets = new string[]
             {
-                string path = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "crash.log");
-                File.AppendAllText(path,
-                    DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") + "  " + (ex == null ? "(no exception object)" : ex.ToString()) + Environment.NewLine,
-                    new UTF8Encoding(true));
-            }
-            catch
+                AppDomain.CurrentDomain.BaseDirectory,
+                Path.Combine(Path.GetTempPath(), "LxSourceDownloader")
+            };
+            foreach (string dir in targets)
             {
+                try
+                {
+                    if (!Directory.Exists(dir)) Directory.CreateDirectory(dir);
+                    File.AppendAllText(Path.Combine(dir, "crash.log"), body, new UTF8Encoding(true));
+                    return;
+                }
+                catch
+                {
+                }
             }
         }
     }
@@ -157,6 +198,8 @@ namespace LxSourceDownloader
         private string _outDir;
         private string _configPath;
         private string _workingProxy;
+        // 本轮已判定失效的镜像：只由「真实下载失败」标记，避免对死站点重复等超时。
+        private readonly HashSet<string> _deadProxies = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         private bool _running;
 
         private string _lxPath;
@@ -187,6 +230,7 @@ namespace LxSourceDownloader
         private Button _btnSync;
         private ProgressBar _bar;
         private Label _lblStatus;
+        private Button[] _buttons;
 
         public MainForm()
         {
@@ -198,9 +242,10 @@ namespace LxSourceDownloader
             try { Font = new Font("Microsoft YaHei UI", 9F, FontStyle.Regular, GraphicsUnit.Point); }
             catch { }
 
+            // 顺序很重要：BuildUi 先建好日志框，后面读洛雪/配置出错时才写得出日志。
             LoadConfig();
-            LoadLx();
             BuildUi();
+            LoadLx();
             LoadList();
             SetStatus("就绪。勾选需要的音源，点击「检查并更新」。");
             Log("保存目录：" + _outDir);
@@ -297,6 +342,8 @@ namespace LxSourceDownloader
             _btnNone.Click += delegate { SetAllChecked(false); };
             _btnSync.Click += delegate { SyncToLx(); };
 
+            _buttons = new Button[] { _btnUpdate, _btnRefresh, _btnAll, _btnNone, _btnSync };
+
             Shown += delegate { if (AutoMode) BeginInvoke(new Action(StartUpdate)); };
             Resize += delegate { LayoutPanels(); };
             LayoutPanels();
@@ -306,15 +353,44 @@ namespace LxSourceDownloader
         {
             int w = ClientSize.Width;
             int h = ClientSize.Height;
-            _top.Bounds = new Rectangle(0, 0, w, 58);
-            _bottom.Bounds = new Rectangle(0, h - 96, w, 96);
-            _mid.Bounds = new Rectangle(0, 58, w, h - 58 - 96);
+            if (w <= 0 || h <= 0 || _buttons == null) return;
+
+            const int gap = 8;
+
+            // 布局全部由控件的实际尺寸推出来，不再写死像素坐标。这样当系统把字体和控件
+            // 放大（DPI 覆盖 / 125%、150% 缩放）时，底栏按钮不会互相压住。
+            int topHeight = _btnBrowse.Height + 28;
+            int btnTop = (topHeight - _btnBrowse.Height) / 2;
+            _top.Bounds = new Rectangle(0, 0, w, topHeight);
 
             int right = w - 12;
             _btnOpen.Left = right - _btnOpen.Width;
-            _btnBrowse.Left = _btnOpen.Left - 8 - _btnBrowse.Width;
-            _txtOut.Left = 78;
-            _txtOut.Width = Math.Max(120, _btnBrowse.Left - 12 - _txtOut.Left);
+            _btnOpen.Top = btnTop;
+            _btnBrowse.Left = _btnOpen.Left - gap - _btnBrowse.Width;
+            _btnBrowse.Top = btnTop;
+            _lblPath.Left = 12;
+            _lblPath.Top = (topHeight - _lblPath.Height) / 2;
+            _txtOut.Left = _lblPath.Right + gap;
+            _txtOut.Top = (topHeight - _txtOut.Height) / 2;
+            _txtOut.Width = Math.Max(120, _btnBrowse.Left - gap - _txtOut.Left);
+
+            int rowTop = 10;
+            int x = 12;
+            int rowHeight = 0;
+            foreach (Button b in _buttons)
+            {
+                b.Location = new Point(x, rowTop);
+                x = b.Right + gap;
+                if (b.Height > rowHeight) rowHeight = b.Height;
+            }
+            _bar.Location = new Point(12, rowTop + rowHeight + gap);
+            _bar.Width = Math.Max(200, w - 24);
+            _lblStatus.Location = new Point(12, _bar.Bottom + 4);
+            _lblStatus.Width = Math.Max(200, w - 24);
+
+            int bottomHeight = _lblStatus.Bottom + 6;
+            _bottom.Bounds = new Rectangle(0, h - bottomHeight, w, bottomHeight);
+            _mid.Bounds = new Rectangle(0, topHeight, w, Math.Max(0, h - topHeight - bottomHeight));
 
             if (_mid.Width > 0 && _mid.Height > 0)
             {
@@ -322,8 +398,6 @@ namespace LxSourceDownloader
                 int d = (int)(_mid.Height * 0.58);
                 if (d > 180 && d < _mid.Height - 120) _split.SplitterDistance = d;
             }
-            _bar.Width = Math.Max(200, w - 24);
-            _lblStatus.Width = Math.Max(200, w - 24);
 
             if (_list.Columns.Count == 6)
             {
@@ -422,6 +496,11 @@ namespace LxSourceDownloader
 
         private void ChangeOutDir(string v)
         {
+            if (_running)
+            {
+                _txtOut.Text = _outDir;
+                return;
+            }
             if (string.IsNullOrEmpty(v) || string.Equals(v, _outDir, StringComparison.OrdinalIgnoreCase)) return;
             _outDir = v;
             _txtOut.Text = v;
@@ -453,6 +532,10 @@ namespace LxSourceDownloader
             _btnAll.Enabled = !busy;
             _btnNone.Enabled = !busy;
             _btnSync.Enabled = !busy;
+            _btnOpen.Enabled = !busy;
+            // 下载途中不许改保存位置：worker 线程用的是 _outDir 的快照，边跑边改会让
+            // 同一批音源落到两个目录里。
+            _txtOut.Enabled = !busy;
             _list.Enabled = !busy;
             _bar.Value = 0;
         }
@@ -468,9 +551,32 @@ namespace LxSourceDownloader
             if (names.Count == 0)
             {
                 Log("没有勾选任何音源。");
+                // /auto 是无人值守的：没有可做的事也必须退出，否则计划任务会永远挂着一个进程。
+                AutoFinish("没有勾选任何音源，未做任何更新。");
                 return;
             }
             RunWorker(false, names, null);
+        }
+
+        /// <summary>
+        /// 静默模式的收尾：写 auto.log 并关掉窗口。任何一条返回路径都必须经过这里，
+        /// 否则 /auto 会留下一个不可见的进程。
+        /// </summary>
+        private void AutoFinish(string summary)
+        {
+            if (!AutoMode) return;
+            try
+            {
+                File.WriteAllText(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "auto.log"),
+                    DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") + Environment.NewLine +
+                    summary + Environment.NewLine + "outdir=" + _outDir + Environment.NewLine,
+                    new UTF8Encoding(true));
+            }
+            catch
+            {
+            }
+            if (IsHandleCreated) BeginInvoke(new Action(Close));
+            else Close();
         }
 
         private void StartDiscover()
@@ -526,6 +632,7 @@ namespace LxSourceDownloader
                 if (r == null)
                 {
                     SetStatus("已中断。");
+                    AutoFinish("已中断。");
                     return;
                 }
                 if (!string.IsNullOrEmpty(r.Error)) Log("出错：" + r.Error);
@@ -545,20 +652,7 @@ namespace LxSourceDownloader
                 SaveConfig();
                 RefreshLocalState();
 
-                if (AutoMode)
-                {
-                    try
-                    {
-                        File.WriteAllText(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "auto.log"),
-                            DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") + Environment.NewLine +
-                            _lblStatus.Text + Environment.NewLine + "outdir=" + _outDir + Environment.NewLine,
-                            new UTF8Encoding(true));
-                    }
-                    catch
-                    {
-                    }
-                    BeginInvoke(new Action(Close));
-                }
+                if (AutoMode) AutoFinish(_lblStatus.Text);
             };
             bw.RunWorkerAsync();
         }
@@ -594,15 +688,19 @@ namespace LxSourceDownloader
             string proxy = null;
             if (needNet)
             {
+                _deadProxies.Clear();
                 bw.ReportProgress(-1, "正在探测可用加速站…");
-                proxy = EnsureProxy(bw);
+                proxy = EnsureProxy();
                 if (proxy == null)
                 {
-                    r.Error = "所有加速站都不可用，请检查网络。";
-                    bw.ReportProgress(-1, "所有加速站都不可用。");
-                    return;
+                    // 探测只是加速手段：真正的下载会带着 20 秒超时把所有镜像再试一遍，
+                    // 所以探测没成功也继续，而不是整批直接判死。
+                    bw.ReportProgress(-1, "加速站探测未成功，下载时逐个重试…");
                 }
-                bw.ReportProgress(-1, "使用加速站：" + HostOf(proxy));
+                else
+                {
+                    bw.ReportProgress(-1, "使用加速站：" + HostOf(proxy));
+                }
             }
 
             int total = names.Count;
@@ -627,8 +725,9 @@ namespace LxSourceDownloader
                     {
                         try
                         {
-                            File.WriteAllText(LocalScriptPath(it), text, new UTF8Encoding(true));
-                            _hash[it.Name] = Sha256(Encoding.UTF8.GetBytes(text));
+                            // 不带 BOM：下载回来的脚本也是无 BOM 的，保持两条路径写出的文件一致。
+                            File.WriteAllText(LocalScriptPath(it), text, new UTF8Encoding(false));
+                            _hash[it.Name] = HashText(text);
                             r.Added++;
                             xu.Status = "已从洛雪导出";
                             xu.Size = Kb(Encoding.UTF8.GetByteCount(text));
@@ -654,7 +753,7 @@ namespace LxSourceDownloader
                 try
                 {
                     bw.ReportProgress(-1, "[" + it.Name + "] 下载中…");
-                    byte[] data = FetchWithFallback(proxy, it.Path, bw);
+                    byte[] data = FetchWithFallback(proxy, it.Path);
                     proxy = _workingProxy;
 
                     if (data == null)
@@ -808,14 +907,15 @@ namespace LxSourceDownloader
 
         // ---------------- network ----------------
 
-        private string EnsureProxy(BackgroundWorker bw)
+        private string EnsureProxy()
         {
-            if (_workingProxy != null) return _workingProxy;
-            foreach (string p in Proxies)
+            if (_workingProxy != null && !_deadProxies.Contains(_workingProxy)) return _workingProxy;
+            foreach (string p in CandidateProxies(null))
             {
                 try
                 {
-                    byte[] probe = Fetch(p + Repo + "lx/latest.js", 6000);
+                    // 10 秒而不是 6 秒：实测可用的镜像正常就要 4 秒左右，6 秒在高峰期会误判。
+                    byte[] probe = Fetch(p + Repo + "lx/latest.js", 10000);
                     if (probe != null && probe.Length > 5000)
                     {
                         _workingProxy = p;
@@ -829,12 +929,38 @@ namespace LxSourceDownloader
             return null;
         }
 
-        private byte[] FetchWithFallback(string proxy, string path, BackgroundWorker bw)
+        /// <summary>
+        /// 依次尝试的镜像列表：上次成功的 → 调用方指定的 → 内置列表，跳过本轮已确认失效的。
+        /// </summary>
+        private List<string> CandidateProxies(string preferred)
         {
-            string[] order = new string[] { proxy, _workingProxy, null };
-            foreach (string p in order)
+            List<string> all = new List<string>();
+            AddProxyCandidate(all, preferred);
+            AddProxyCandidate(all, _workingProxy);
+            foreach (string p in Proxies) AddProxyCandidate(all, p);
+
+            List<string> alive = new List<string>();
+            foreach (string p in all)
             {
-                if (p == null) continue;
+                if (!_deadProxies.Contains(p)) alive.Add(p);
+            }
+            return alive;
+        }
+
+        private static void AddProxyCandidate(List<string> list, string proxy)
+        {
+            if (string.IsNullOrEmpty(proxy)) return;
+            foreach (string existing in list)
+            {
+                if (string.Equals(existing, proxy, StringComparison.OrdinalIgnoreCase)) return;
+            }
+            list.Add(proxy);
+        }
+
+        private byte[] FetchWithFallback(string proxy, string path)
+        {
+            foreach (string p in CandidateProxies(proxy))
+            {
                 try
                 {
                     byte[] d = Fetch(p + Repo + path, 20000);
@@ -847,23 +973,17 @@ namespace LxSourceDownloader
                 catch
                 {
                 }
+                // 只有真正下载失败才拉黑，探测超时不算——探测只是优化，不是判据。
+                _deadProxies.Add(p);
             }
 
             _workingProxy = null;
-            string again = EnsureProxy(bw);
-            if (again == null) return null;
-            try
-            {
-                return Fetch(again + Repo + path, 20000);
-            }
-            catch
-            {
-                return null;
-            }
+            return null;
         }
 
         private static byte[] Fetch(string url, int timeoutMs)
         {
+            const int MaxResponseBytes = 8 * 1024 * 1024;
             HttpWebRequest req = (HttpWebRequest)WebRequest.Create(url);
             req.UserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) LxSourceTool/" + Version;
             req.Timeout = timeoutMs;
@@ -880,7 +1000,13 @@ namespace LxSourceDownloader
                 {
                     byte[] buf = new byte[81920];
                     int n;
-                    while ((n = s.Read(buf, 0, buf.Length)) > 0) ms.Write(buf, 0, n);
+                    while ((n = s.Read(buf, 0, buf.Length)) > 0)
+                    {
+                        ms.Write(buf, 0, n);
+                        // 音源脚本只有几十 KB；这个上限只防止异常响应把内存吃光。
+                        if (ms.Length > MaxResponseBytes)
+                            throw new InvalidDataException("响应超过 " + (MaxResponseBytes / 1024 / 1024) + " MB，已中止");
+                    }
                     return ms.ToArray();
                 }
             }
@@ -909,6 +1035,16 @@ namespace LxSourceDownloader
         {
             if (len >= 1024 * 1024) return (len / 1024.0 / 1024.0).ToString("0.0") + " MB";
             return Math.Max(1, (len + 1023) / 1024) + " KB";
+        }
+
+        /// <summary>
+        /// 脚本内容的规范哈希：一律按解码后的 UTF-8 文本计算。
+        /// 洛雪里存的、磁盘上的 .js 都必须走这一个口径，否则同一个脚本会因为磁盘文件带
+        /// BOM 而算出两个哈希，界面就会永远显示「待同步」。
+        /// </summary>
+        private static string HashText(string text)
+        {
+            return Sha256(Encoding.UTF8.GetBytes(text ?? ""));
         }
 
         private static string HostOf(string url)
@@ -1157,21 +1293,23 @@ namespace LxSourceDownloader
                 return;
             }
             string file = LocalScriptPath(it);
-            bool same = false;
-            if (File.Exists(file) && _lxHash.ContainsKey(name))
+            string text = null;
+            try
             {
-                try { same = string.Equals(Sha256(File.ReadAllBytes(file)), _lxHash[name], StringComparison.OrdinalIgnoreCase); }
-                catch { }
+                if (File.Exists(file)) text = File.ReadAllText(file, Encoding.UTF8);
             }
+            catch
+            {
+            }
+            bool same = text != null && _lxHash.ContainsKey(name)
+                && string.Equals(HashText(text), _lxHash[name], StringComparison.OrdinalIgnoreCase);
             if (same)
             {
                 cell.Text = "已装 " + VerLabel(ver);
                 cell.ForeColor = Color.FromArgb(40, 110, 60);
                 return;
             }
-            string localVer = "";
-            try { localVer = ScriptVersion(File.ReadAllText(file, Encoding.UTF8)); }
-            catch { }
+            string localVer = text == null ? "" : ScriptVersion(text);
             if (CompareVersions(localVer, ver) < 0)
             {
                 cell.Text = "洛雪更新 " + VerLabel(ver);
@@ -1223,7 +1361,7 @@ namespace LxSourceDownloader
                 catch { skipped++; continue; }
                 string name = ScriptName(text);
                 if (name.Length == 0) name = it.Name;
-                string localHash = Sha256(Encoding.UTF8.GetBytes(text));
+                string localHash = HashText(text);
                 string ver = ScriptVersion(text);
 
                 if (!_lxByName.ContainsKey(name))
@@ -1288,11 +1426,31 @@ namespace LxSourceDownloader
             try
             {
                 string stamp = DateTime.Now.ToString("yyyyMMdd-HHmmss");
-                File.Copy(_lxPath, _lxPath + ".bak-" + stamp, true);
+                string backup = _lxPath + ".bak-" + stamp;
+                string tmp = _lxPath + ".tmp";
                 JavaScriptSerializer ser = new JavaScriptSerializer();
                 ser.MaxJsonLength = int.MaxValue;
-                File.WriteAllText(_lxPath, ser.Serialize(_lxRoot), new UTF8Encoding(false));
-                Log("已写入洛雪：新增 " + added + " 个，更新 " + updated + " 个（原文已备份为 user_api.json.bak-" + stamp + "，降级忽略 " + older + " 个）：");
+                string json = ser.Serialize(_lxRoot);
+
+                // 先写临时文件再替换：中途崩溃 / 断电也不会留下写了一半的 user_api.json。
+                // File.Replace 会顺带生成备份；某些文件系统不支持时退回「备份 + 覆盖」。
+                File.WriteAllText(tmp, json, new UTF8Encoding(false));
+                bool replaced = false;
+                try
+                {
+                    File.Replace(tmp, _lxPath, backup);
+                    replaced = true;
+                }
+                catch
+                {
+                }
+                if (!replaced)
+                {
+                    File.Copy(_lxPath, backup, true);
+                    File.Copy(tmp, _lxPath, true);
+                    File.Delete(tmp);
+                }
+                Log("已写入洛雪：新增 " + added + " 个，更新 " + updated + " 个（原文已备份为 " + Path.GetFileName(backup) + "，降级忽略 " + older + " 个）：");
                 Log(changed.ToString().TrimEnd());
                 Log("请重启洛雪，在「设置 → 自定义源管理」里确认音源与版本号。");
                 SetStatus("已同步到洛雪（新增 " + added + " / 更新 " + updated + "），重启洛雪生效。");
@@ -1389,7 +1547,8 @@ namespace LxSourceDownloader
 
         private void Log(string msg)
         {
-            if (_log.IsDisposed) return;
+            // _log 在 BuildUi 之前是 null；窗口已销毁时也可能被后台线程回调到这里。
+            if (_log == null || _log.IsDisposed) return;
             _log.AppendText((_log.TextLength > 0 ? "\r\n" : "") + msg);
             _log.SelectionStart = _log.TextLength;
             _log.ScrollToCaret();
@@ -1397,6 +1556,7 @@ namespace LxSourceDownloader
 
         private void SetStatus(string msg)
         {
+            if (_lblStatus == null || _lblStatus.IsDisposed) return;
             _lblStatus.Text = msg;
         }
 

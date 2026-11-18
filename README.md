@@ -23,6 +23,7 @@ custom sources — and reads/writes the sources **already installed** in your LX
 - [Command line](#command-line)
 - [config.ini](#configini)
 - [Build from source](#build-from-source)
+- [Tests](#tests)
 - [Project layout](#project-layout)
 - [Roadmap](#roadmap)
 - [FAQ](#faq)
@@ -33,8 +34,8 @@ custom sources — and reads/writes the sources **already installed** in your LX
 
 ## Features
 
-- **One 46 KB exe, no installer, no runtime download.** Built against .NET Framework 4.8, which ships with
-  Windows 10/11. Copy the folder to another PC and double-click.
+- **One exe, under 50 KB, no installer, no runtime download.** Built against .NET Framework 4.8,
+  which ships with Windows 10/11. Copy the folder to another PC and double-click.
 - **Content-hash updates.** Every source is downloaded and compared by SHA-256 with the previous copy:
   unchanged sources are not rewritten, changed ones replace exactly one file.
 - **Mirror failover.** Tries several GitHub mirrors and remembers the first working one, re-probing on failure.
@@ -141,15 +142,33 @@ pwsh ./build.ps1          # -> dist/LxSourceDownloader.exe
 `build.ps1` locates `csc.exe` under `%WINDIR%\Microsoft.NET\Framework64\v4.0.30319`, compiles with
 `/codepage:65001`, embeds `assets/icon.ico`, and reads the version from `src/AssemblyInfo.cs`.
 
+## Tests
+
+`tests/smoke.ps1` drives the built exe against throw-away copies of `config.ini` and
+`user_api.json` (redirected with `LX_TOOL_DATA`), so your real LX Music data is never opened:
+
+```powershell
+pwsh ./tests/smoke.ps1              # everything, including the GUI-driven sync round trip
+pwsh ./tests/smoke.ps1 -SkipGui     # headless only (what CI runs)
+```
+
+It covers the failures that have actually bitten users: a corrupt `user_api.json` at startup,
+`/auto` exiting on its own, and a sync round trip (add, header metadata, byte-for-byte content,
+backup, idempotency, downgrade protection).
+
 ## Project layout
 
 ```
 build.ps1                  # csc-based build script
-src/LxSourceDownloader.cs  # entire application (single file, ~1.4k lines)
-src/AssemblyInfo.cs        # version metadata
+publish.ps1                # one-off helper: create the repo and push (gh or an explicit URL)
+src/LxSourceDownloader.cs  # entire application (single file, ~1.5k lines)
+src/AssemblyInfo.cs        # version metadata (single source of truth for the version)
 assets/icon.ico            # app icon
+tests/smoke.ps1            # end-to-end regression tests (sandboxed user_api.json)
 docs/screenshot.png        # README screenshot
-.github/workflows/build.yml# CI: build on every push, release on v* tags
+docs/PUBLISH.md            # publishing notes (Chinese)
+legacy/                    # the original PowerShell/.cmd scripts, kept for reference
+.github/workflows/build.yml# CI: build + smoke test on every push, release on v* tags
 ```
 
 ## Roadmap
@@ -185,7 +204,8 @@ The C# source, build script, CI workflow, icon and documentation are **generated
 [DeepSeek Harness](https://github.com/deepseek-ai)**, an AI coding agent, under the maintainer's direction.
 The maintainer defines the requirements, reviews every change, runs the real-machine checks (clean-clone
 build, `/auto`, GUI clicks, LX Music round-trip against a sandboxed copy of `user_api.json`) and signs off
-each release.
+each release. The LX Music round-trip and `/auto` behaviour are also covered by
+[`tests/smoke.ps1`](tests/smoke.ps1) and by CI.
 
 Treat the repository like any third-party code: it is plain C# you can read, build and modify, but review it
 the way you would review anything that writes to your music app's data file. Questions about *why* something
@@ -209,4 +229,4 @@ their authors; availability and legality depend on your jurisdiction. Use at you
 
 ## License
 
-[MIT](LICENSE) © 2026 maygo88 and contributors
+[MIT](LICENSE) © 2026 haungsheng and contributors
