@@ -7,8 +7,13 @@ on:
   pull_request:
   workflow_dispatch:
 
+# Read-only by default; only the release job (below) is allowed to write.
 permissions:
-  contents: write
+  contents: read
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build:
@@ -20,6 +25,26 @@ jobs:
       - name: Build
         shell: pwsh
         run: ./build.ps1
+
+      - name: Smoke test (headless)
+        shell: pwsh
+        run: ./tests/smoke.ps1 -SkipGui
+
+      - name: Check the tag matches the assembly version
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        env:
+          TAG_NAME: ${{ github.ref_name }}
+        run: |
+          # Passed through env instead of being interpolated into the script text.
+          $tag = $env:TAG_NAME.Trim()
+          $exe = 'dist/LxSourceDownloader.exe'
+          $fileVersion = (Get-Item $exe).VersionInfo.FileVersion   # e.g. 1.2.1.0
+          $expected = $tag.TrimStart('v')
+          Write-Host "tag=$tag exe=$fileVersion"
+          if (-not $fileVersion.StartsWith($expected + '.')) {
+            throw "Tag $tag does not match src/AssemblyInfo.cs (exe version $fileVersion). Bump the version before tagging."
+          }
 
       - name: Package
         shell: pwsh
@@ -39,8 +64,20 @@ jobs:
           path: LxSourceDownloader-win-x64.zip
           if-no-files-found: error
 
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download the packaged zip
+        uses: actions/download-artifact@v4
+        with:
+          name: LxSourceDownloader-win-x64
+          path: .
+
       - name: Publish release
-        if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
           files: LxSourceDownloader-win-x64.zip
