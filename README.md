@@ -5,6 +5,16 @@
 [![license](https://img.shields.io/github/license/maygo88/lx-source-downloader)](LICENSE)
 ![platform](https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-0078D4)
 
+**[下载最新版](https://github.com/maygo88/lx-source-downloader/releases/latest)** · 中文说明见
+[README.zh-CN.md](README.zh-CN.md)
+
+> 面向 [洛雪音乐](https://github.com/lyswhut/lx-music-desktop) 用户的单文件小工具：一键下载/更新第三方
+> 自定义音源，并把音源**直接同步进你本地的洛雪**。SHA-256 内容比对（只写有变化的文件）、加速站自动切换、
+> 免安装，一个 50 KB 的 exe。
+>
+> 它解决的是这几个具体的手工步骤：GitHub 时通时不通；不知道自己的音源是不是最新；已经装进洛雪的音源看不见
+> 版本；想把本地脚本塞回洛雪只能一条条手动导入。
+
 A single-file Windows GUI that downloads and updates [LX Music](https://github.com/lyswhut/lx-music-desktop)
 custom sources — and reads/writes the sources **already installed** in your LX Music.
 
