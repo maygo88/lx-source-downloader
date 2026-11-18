@@ -1,4 +1,4 @@
-﻿# LX Source Downloader
+# LX Source Downloader
 
 [![build](https://github.com/maygo88/lx-source-downloader/actions/workflows/build.yml/badge.svg)](https://github.com/maygo88/lx-source-downloader/actions/workflows/build.yml)
 [![release](https://img.shields.io/github/v/release/maygo88/lx-source-downloader)](https://github.com/maygo88/lx-source-downloader/releases)
@@ -11,6 +11,25 @@ custom sources — and reads/writes the sources **already installed** in your LX
 ![screenshot](docs/screenshot.png)
 
 *UI strings are Simplified Chinese for now (see [Roadmap](#roadmap)); the code and docs are open for translation.*
+
+## Contents
+
+- [Features](#features)
+- [Requirements](#requirements)
+- [Install](#install)
+- [Usage](#usage)
+- [How LX Music stores custom sources](#how-lx-music-stores-custom-sources)
+- [Safety when writing to LX Music](#safety-when-writing-to-lx-music)
+- [Command line](#command-line)
+- [config.ini](#configini)
+- [Build from source](#build-from-source)
+- [Project layout](#project-layout)
+- [Roadmap](#roadmap)
+- [FAQ](#faq)
+- [Related projects](#related-projects)
+- [How this project is built](#how-this-project-is-built)
+- [Disclaimer](#disclaimer)
+- [License](#license)
 
 ## Features
 
@@ -173,6 +192,14 @@ the way you would review anything that writes to your music app's data file. Que
 is implemented a certain way are welcome as issues.
 
 See [README.zh-CN.md](README.zh-CN.md) for the fuller Chinese documentation.
+
+## Related projects
+
+- [lx-music-desktop](https://github.com/lyswhut/lx-music-desktop) — the music player this tool is built for.
+- [lx-music-script](https://github.com/lyswhut/lx-music-script) — the userscript framework that custom sources
+  are written against.
+
+Neither project is affiliated with this tool.
 
 ## Disclaimer
 
