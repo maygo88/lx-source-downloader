@@ -59,7 +59,10 @@
 - **内容哈希更新**：下载后计算 SHA-256，与本地记录比对；没变的不写盘，变了的只替换那一个文件。
 - **加速站调度**：内置 4 个镜像依次探测（`gh-proxy.org`、`ghfast.top`、`gh-proxy.com`、直连），
   记住第一个可用的；失败自动重新探测。
-- **内容校验**：小于 5 KB 或开头是 `<`（错误页）的响应直接丢弃，不会把 HTML 存成 `.js`。
+- **内容校验**：开头是 `<`（错误页）或没有 userscript 头（`@name` / `==UserScript==`）的响应直接丢弃，
+  不会把 HTML 存成 `.js`。不再用「小于 5 KB 一律丢弃」——实测有 1.5 KB 的正常音源。
+- **多仓库**：`config.ini` 用 `repo.<键>` 注册上游仓库，音源写成 `键:仓库内路径`，
+  同一个列表里可以混放来自不同仓库的音源。
 - **洛雪联动**：读取/写入 `%APPDATA%\lx-music-desktop\LxDatas\user_api.json`；缺失的音源会自动新增
   （洛雪被清空也能一键恢复）。
 - **双向发现**：既列仓库新增目录，也列"只在洛雪里存在"的音源，并可导出成本地 `.js`。
@@ -265,28 +268,46 @@ LxSourceDownloader.exe /auto
 
 ```ini
 # 洛雪音源下载器配置，可手动修改
-# repo = 上游仓库，owner/name/branch/；仓库搬家时改这里即可，不用等新版本
-repo=pdone/lx-music-source/main/
+# repo.<键> = 上游仓库 owner/name/branch/；音源用「键:仓库内路径」指定，省略键则用默认仓库
+repo.pdone=pdone/lx-music-source/main/
+repo.gy=guoyue2010/lxmusic-/main/
 # proxies = 镜像前缀，逗号分隔（留空则用内置列表）；镜像失效时改这里
 proxies=https://gh-proxy.org/raw.githubusercontent.com/,https://raw.githubusercontent.com/
 outdir=D:\Music\lx-sources
 source.xinghai=xinghai/latest.js
 check.xinghai=1
-hash.xinghai=79a5c470…
-time.xinghai=2026-11-16 09:53:00
+source.doubao=sec:sources/doubao/豆包定制[聚合音源].js
+check.doubao=0
+hash.doubao=79a5c470…
+time.doubao=2026-11-24 19:20:00
 ```
 
 | 键 | 含义 |
 | --- | --- |
-| `repo=owner/name/branch/` | 上游仓库；也接受完整 GitHub 地址。**仓库改名/换分支时只改这一行** |
+| `repo.<键>=owner/name/branch/` | 注册一个上游仓库；内置 `pdone`、`gy`、`xzh`、`wzh`、`sec`、`ikun`。也接受完整 GitHub 地址 |
+| `source.<名字>=<键>:<路径>` | 一条音源：仓库键 + 该仓库内的路径。省略 `键:` 则用默认仓库（兼容老配置） |
+| `defaults=<版本号>` | 内置音源清单已经并入到哪个版本，升级时据此补入新音源。**不要手改** |
 | `proxies=前缀1,前缀2,...` | 镜像前缀列表，按顺序尝试；留空则用内置的 4 个 |
 | `outdir=...` | 保存位置（绝对路径） |
-| `source.<名字>=<路径>` | 音源在仓库里的相对路径 |
 | `check.<名字>=1\|0` | 该行是否勾选，下次启动沿用 |
 | `hash.<名字>=...` | 上次内容的 SHA-256；**删掉这行 = 下次强制重新下载** |
 | `time.<名字>=...` | 上次成功更新时间 |
 
 手工编辑请用记事本另存为 UTF-8。
+
+### 加一个别的仓库的音源
+
+不用改代码、不用等我发版，在 `config.ini` 里加两行就行：
+
+```ini
+repo.myrepo=某个用户/仓库名/main/
+source.新音源=myrepo:某目录/某个脚本.js
+check.新音源=0
+```
+
+`repo.` 后面的键（这里是 `myrepo`）随便起，只要求它和 `source.` 里的前缀一致；
+路径按仓库里的真实结构写，中文和空格**不用自己转义**，程序会做 URL 编码。
+改完重开程序，列表里就多一行。
 
 ---
 

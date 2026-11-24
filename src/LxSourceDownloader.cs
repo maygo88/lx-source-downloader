@@ -20,6 +20,7 @@ namespace LxSourceDownloader
     {
         public string Name;
         public string Path;
+        public string RepoKey;
         public bool LxOnly;
         public bool IsNew;
 
@@ -27,6 +28,7 @@ namespace LxSourceDownloader
         {
             Name = name;
             Path = path;
+            RepoKey = "pdone";
         }
     }
 
@@ -187,9 +189,9 @@ namespace LxSourceDownloader
 
     internal sealed class MainForm : Form
     {
-        // 上游仓库的默认位置，格式 owner/name/branch/。可在 config.ini 用 repo= 覆盖，
-        // 这样仓库改名/换分支时用户不必等新版本。
+        // 默认上游仓库（老版本只有一个仓库，配置里的 repo= 仍然指向它）。
         private const string DefaultRepo = "pdone/lx-music-source/main/";
+        private const string DefaultRepoKey = "pdone";
         private const string AppTitle = "洛雪音源下载器 / LX Source Downloader";
         private static readonly string Version = typeof(Program).Assembly.GetName().Version.ToString(3);
 
@@ -202,21 +204,60 @@ namespace LxSourceDownloader
             "https://raw.githubusercontent.com/"
         };
 
+        /// <summary>
+        /// 内置的上游仓库注册表。每个仓库配一个短键，音源用 "键/仓库内路径" 指向它，
+        /// 于是同一个列表里可以混放多个仓库的音源。
+        /// </summary>
+        private static readonly string[,] DefaultRepos = new string[,]
+        {
+            { DefaultRepoKey, DefaultRepo },
+            { "gy",   "guoyue2010/lxmusic-/main/" },
+            { "xzh",  "xzh767/lxmusic-source-all/main/" },
+            { "wzh",  "wzh15802/lxmusic/main/" },
+            { "sec",  "shellsec/lx-music-source/master/" },
+            { "ikun", "Macrohard0001/lx-ikun-music-sources/main/" }
+        };
+
+        /// <summary>
+        /// 首次运行的音源清单：{ 仓库键, 列表名(也是本地文件名), 仓库内路径, 是否默认勾选 }。
+        /// pdone 的 8 个默认勾选；其余仓库的音源默认不勾选，避免第一次运行就拉一堆用不上的，
+        /// 但它们都在列表里，想用直接勾上即可。
+        /// </summary>
         private static readonly string[,] DefaultSources = new string[,]
         {
-            { "xinghai", "xinghai/latest.js" },
-            { "qingliang", "qingliang/latest.js" },
-            { "suyin", "suyin/latest.js" },
-            { "huanyin", "huanyin/latest.js" },
-            { "changqing", "changqing/latest.js" },
-            { "fish", "fish/latest.js" },
-            { "xinglan", "xinglan/latest.js" },
-            { "feichangdao", "feichangdao/latest.js" }
+            { "pdone", "xinghai",     "xinghai/latest.js",     "1" },
+            { "pdone", "qingliang",   "qingliang/latest.js",   "1" },
+            { "pdone", "suyin",       "suyin/latest.js",       "1" },
+            { "pdone", "huanyin",     "huanyin/latest.js",     "1" },
+            { "pdone", "changqing",   "changqing/latest.js",   "1" },
+            { "pdone", "fish",        "fish/latest.js",        "1" },
+            { "pdone", "xinglan",     "xinglan/latest.js",     "1" },
+            { "pdone", "feichangdao", "feichangdao/latest.js", "1" },
+
+            // 以下来自其他仓库，2026-11-24 实测可下载且带合法 userscript 头
+            { "gy",  "nianxin",     "V2603/优质-支持四平台FLAC/念心音源 v1.0.0.js",            "0" },
+            { "gy",  "ciallo",      "V2603/一般-支持单平台FLAC或多平台320k/Ciallo~.js",        "0" },
+            { "gy",  "yiyin",       "V2603/一般-支持单平台FLAC或多平台320k/忆音音源 v1.js",     "0" },
+            { "gy",  "kuwodes",     "V2603/一般-支持单平台FLAC或多平台320k/KE-DES.js",          "0" },
+            { "gy",  "yibai",       "V2603/一般-支持单平台FLAC或多平台320k/yibai酷我流式V4.js", "0" },
+            { "gy",  "juheapi",     "V2603/一般-支持单平台FLAC或多平台320k/收集の聚合接口.js",   "0" },
+            { "gy",  "xiyuan",      "V2603/一般-支持单平台FLAC或多平台320k/惜缘 v1.js",           "0" },
+            { "xzh", "mdownloader", "MusicDownloader.js",                                     "0" },
+            { "xzh", "aya",         "aya音源v1.0.2（QQ无法下载）.js",                          "0" },
+            { "xzh", "gdstudio",    "gdstudio音乐源 v1.0.1（仅支持网易）.js",                  "0" },
+            { "wzh", "kxh",         "K×H测试+v1.7.17.js",                                     "0" },
+            { "sec", "animemusic",  "sources/animemusic/lx-animemusic.js",                    "0" },
+            { "sec", "anni",        "sources/annie/安妮独家音源.js",                           "0" },
+            { "sec", "appx64",      "sources/appx64/Appx64 Clear Music.js",                    "0" },
+            { "sec", "doubao",      "sources/doubao/豆包定制[聚合音源].js",                     "0" }
         };
 
         private string _repo = DefaultRepo;
         private string _api = RepoApi(DefaultRepo);
         private List<string> _proxies = new List<string>(DefaultProxies);
+        private readonly Dictionary<string, string> _repos = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        // 上次并入内置清单时的版本号：版本一变就把新增的内置音源补进配置，老用户也能看到新音源。
+        private string _defaultsStamp;
         // 探测 README.md 时拿到 404：说明仓库/分支路径本身不对，不是镜像挂了。
         private bool _repoMissing;
 
@@ -273,6 +314,7 @@ namespace LxSourceDownloader
             // 顺序很重要：BuildUi 先建好日志框，后面读洛雪/配置出错时才写得出日志。
             LoadConfig();
             BuildUi();
+            MergeNewDefaults();
             LoadLx();
             LoadList();
             SetStatus("就绪。勾选需要的音源，点击「检查并更新」。");
@@ -804,7 +846,7 @@ namespace LxSourceDownloader
                 try
                 {
                     bw.ReportProgress(-1, "[" + it.Name + "] 下载中…");
-                    SourceFetchResult fr = FetchSource(proxy, it.Path);
+                    SourceFetchResult fr = FetchSource(proxy, it);
                     proxy = _workingProxy;
 
                     if (fr.NotFound)
@@ -839,7 +881,7 @@ namespace LxSourceDownloader
                         continue;
                     }
 
-                    if (data.Length < 5000 || LooksLikeHtml(data))
+                    if (!LooksLikeUserscript(data))
                     {
                         r.Failed++;
                         iu.Status = "无效内容";
@@ -1000,6 +1042,51 @@ namespace LxSourceDownloader
             return "https://api.github.com/repos/" + parts[0] + "/" + parts[1] + "/contents/";
         }
 
+        /// <summary>
+        /// config.ini 的 source.&lt;名字&gt;= 值。值有三种写法：
+        ///   "lx/latest.js"                 → 默认仓库里的路径（老版本配置）
+        ///   "gy:V2603/…/念心音源 v1.0.0.js" → 指定仓库键 + 该仓库内的路径
+        /// 用冒号而不是斜杠做分隔，因为仓库里存在叫 ikun 之类的目录，会和仓库键撞名。
+        /// </summary>
+        private void AddConfiguredSource(string name, string value)
+        {
+            if (Find(name) != null) return;
+            string key = DefaultRepoKey;
+            string path = value;
+            int colon = value.IndexOf(':');
+            if (colon > 0)
+            {
+                string head = value.Substring(0, colon);
+                if (_repos.ContainsKey(head))
+                {
+                    key = head;
+                    path = value.Substring(colon + 1);
+                }
+            }
+            SourceItem it = new SourceItem(name, path);
+            it.RepoKey = key;
+            _items.Add(it);
+        }
+
+        /// <summary>音源所属仓库的前缀，形如 owner/name/branch/。</summary>
+        private string RepoPrefix(SourceItem it)
+        {
+            string repo;
+            if (!string.IsNullOrEmpty(it.RepoKey) && _repos.TryGetValue(it.RepoKey, out repo)) return repo;
+            return _repo;
+        }
+
+        /// <summary>
+        /// 逐段 URL 编码：这些仓库里大量中文、空格、括号文件名，不编码的话请求直接失败。
+        /// 斜杠作为路径分隔符保留。
+        /// </summary>
+        private static string EncodePath(string path)
+        {
+            string[] segments = (path ?? "").Split('/');
+            for (int i = 0; i < segments.Length; i++) segments[i] = Uri.EscapeDataString(segments[i]);
+            return string.Join("/", segments);
+        }
+
         private string EnsureProxy()
         {
             if (_workingProxy != null && !_deadProxies.Contains(_workingProxy)) return _workingProxy;
@@ -1057,14 +1144,15 @@ namespace LxSourceDownloader
             list.Add(proxy);
         }
 
-        private SourceFetchResult FetchSource(string proxy, string path)
+        private SourceFetchResult FetchSource(string proxy, SourceItem it)
         {
             SourceFetchResult result = new SourceFetchResult();
+            string urlPath = EncodePath(it.Path);
             foreach (string p in CandidateProxies(proxy))
             {
                 try
                 {
-                    byte[] d = Fetch(p + _repo + path, 20000);
+                    byte[] d = Fetch(p + RepoPrefix(it) + urlPath, 20000);
                     if (d != null && d.Length > 0)
                     {
                         _workingProxy = p;
@@ -1148,6 +1236,19 @@ namespace LxSourceDownloader
             while (i < data.Length && (data[i] == 32 || data[i] == 9 || data[i] == 13 || data[i] == 10)) i++;
             if (i >= data.Length) return true;
             return data[i] == (byte)'<';
+        }
+
+        /// <summary>
+        /// 判断下载到的内容是不是一个洛雪音源脚本。以前用「小于 5 KB 一律丢弃」，
+        /// 但真实存在的音源里有 1.5 KB、2.7 KB 的，会被误杀；改成看 userscript 头。
+        /// </summary>
+        private static bool LooksLikeUserscript(byte[] data)
+        {
+            if (data == null || data.Length < 256) return false;
+            if (LooksLikeHtml(data)) return false;
+            string head = Encoding.UTF8.GetString(data, 0, Math.Min(data.Length, 8192));
+            return head.IndexOf("@name", StringComparison.OrdinalIgnoreCase) >= 0
+                || head.IndexOf("==UserScript==", StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
         private static string Sha256(byte[] data)
@@ -1605,6 +1706,9 @@ namespace LxSourceDownloader
         {
             _configPath = Path.Combine(ConfigDirCandidate(), "config.ini");
 
+            _repos.Clear();
+            for (int i = 0; i < DefaultRepos.GetLength(0); i++) _repos[DefaultRepos[i, 0]] = DefaultRepos[i, 1];
+
             if (File.Exists(_configPath))
             {
                 try
@@ -1618,7 +1722,14 @@ namespace LxSourceDownloader
                         string k = line.Substring(0, eq).Trim();
                         string v = line.Substring(eq + 1).Trim();
                         if (k.Equals("outdir", StringComparison.OrdinalIgnoreCase)) _outDir = v;
+                        else if (k.Equals("defaults", StringComparison.OrdinalIgnoreCase)) _defaultsStamp = v;
                         else if (k.Equals("repo", StringComparison.OrdinalIgnoreCase)) _repo = NormalizeRepo(v);
+                        else if (k.StartsWith("repo.", StringComparison.OrdinalIgnoreCase))
+                        {
+                            // repo.<键>=owner/name/branch/ —— 多仓库支持
+                            string key = k.Substring(5).Trim();
+                            if (key.Length > 0) _repos[key] = NormalizeRepo(v);
+                        }
                         else if (k.Equals("proxies", StringComparison.OrdinalIgnoreCase))
                         {
                             List<string> list = new List<string>();
@@ -1638,7 +1749,7 @@ namespace LxSourceDownloader
                         {
                             string name = k.Substring(7);
                             if (v.Length == 0) continue;
-                            if (Find(name) == null) _items.Add(new SourceItem(name, v));
+                            AddConfiguredSource(name, v);
                         }
                     }
                 }
@@ -1648,17 +1759,50 @@ namespace LxSourceDownloader
             }
 
             _api = RepoApi(_repo);
+            // 默认仓库键始终指向当前生效的默认仓库（repo= 可能把它换掉了）。
+            _repos[DefaultRepoKey] = _repo;
 
             if (_items.Count == 0)
             {
                 for (int i = 0; i < DefaultSources.GetLength(0); i++)
-                    _items.Add(new SourceItem(DefaultSources[i, 0], DefaultSources[i, 1]));
+                {
+                    SourceItem it = new SourceItem(DefaultSources[i, 1], DefaultSources[i, 2]);
+                    it.RepoKey = DefaultSources[i, 0];
+                    _items.Add(it);
+                    // 非 pdone 仓库的内置音源默认不勾选：列表里看得到，想要再勾。
+                    if (!_checkedCfg.ContainsKey(it.Name)) _checkedCfg[it.Name] = (DefaultSources[i, 3] == "1");
+                }
+                _defaultsStamp = Version;
             }
 
             if (string.IsNullOrEmpty(_outDir))
             {
                 _outDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "lx-sources");
             }
+        }
+
+        /// <summary>
+        /// 老配置升级时把这一版新增的内置音源补进列表：已存在的不动，也不会覆盖用户的勾选状态。
+        /// 放在 BuildUi 之后调用，这样日志框已经存在，能告诉用户补了几个。
+        /// </summary>
+        private void MergeNewDefaults()
+        {
+            if (_items.Count == 0) return;
+            if (string.Equals(_defaultsStamp, Version, StringComparison.OrdinalIgnoreCase)) return;
+
+            int merged = 0;
+            for (int i = 0; i < DefaultSources.GetLength(0); i++)
+            {
+                string name = DefaultSources[i, 1];
+                if (Find(name) != null) continue;
+                SourceItem it = new SourceItem(name, DefaultSources[i, 2]);
+                it.RepoKey = DefaultSources[i, 0];
+                _items.Add(it);
+                _checkedCfg[name] = (DefaultSources[i, 3] == "1");
+                merged++;
+            }
+            _defaultsStamp = Version;
+            if (merged > 0) Log("已并入 " + merged + " 个新增内置音源（默认未勾选），需要时在列表里勾上。");
         }
 
         private void SaveConfig()
@@ -1672,15 +1816,20 @@ namespace LxSourceDownloader
                         _checkedCfg[((SourceItem)l.Tag).Name] = l.Checked;
                 }
                 sb.AppendLine("# 洛雪音源下载器配置，可手动修改");
-                sb.AppendLine("# repo = 上游仓库，owner/name/branch/；仓库搬家时改这里即可，不用等新版本");
-                sb.AppendLine("repo=" + _repo);
+                sb.AppendLine("# repo.<键> = 上游仓库 owner/name/branch/；音源用「键:仓库内路径」指定，省略键则用默认仓库");                List<string> repoKeys = new List<string>(_repos.Keys);
+                repoKeys.Sort(StringComparer.OrdinalIgnoreCase);
+                foreach (string key in repoKeys) sb.AppendLine("repo." + key + "=" + _repos[key]);
                 sb.AppendLine("# proxies = 镜像前缀，逗号分隔（留空则用内置列表）；镜像失效时改这里");
                 sb.AppendLine("proxies=" + string.Join(",", _proxies.ToArray()));
                 sb.AppendLine("outdir=" + _outDir);
+                sb.AppendLine("# 内置音源清单的版本标记：升级后据此并入新增音源，请勿手改");
+                sb.AppendLine("defaults=" + (_defaultsStamp != null ? _defaultsStamp : Version));
                 foreach (SourceItem it in _items)
                 {
                     if (it.LxOnly) continue;
-                    sb.AppendLine("source." + it.Name + "=" + it.Path);
+                    string prefix = string.Equals(it.RepoKey, DefaultRepoKey, StringComparison.OrdinalIgnoreCase)
+                        ? "" : it.RepoKey + ":";
+                    sb.AppendLine("source." + it.Name + "=" + prefix + it.Path);
                     if (_checkedCfg.ContainsKey(it.Name)) sb.AppendLine("check." + it.Name + "=" + (_checkedCfg[it.Name] ? "1" : "0"));
                     if (_hash.ContainsKey(it.Name)) sb.AppendLine("hash." + it.Name + "=" + _hash[it.Name]);
                     if (_time.ContainsKey(it.Name)) sb.AppendLine("time." + it.Name + "=" + _time[it.Name]);

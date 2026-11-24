@@ -53,6 +53,10 @@ custom sources — and reads/writes the sources **already installed** in your LX
   and can push local files back with automatic backup and downgrade protection.
 - **Discovery from two directions.** Lists new directories in the upstream repo *and* sources that exist only
   in your LX Music installation (those can be exported to `.js` files).
+- **Several upstream repositories at once.** `config.ini` maps short keys to repositories
+  (`repo.gy=guoyue2010/lxmusic-/main/`); a source is written `<key>:<path>`, so one list can mix sources
+  from different repos. `pdone`, `gy`, `xzh`, `wzh`, `sec` and `ikun` ship pre-registered, plus 15
+  verified extra sources.
 - **Silent mode.** `LxSourceDownloader.exe /auto` updates everything without a window — handy for Task Scheduler.
 - **Defensive startup.** Blocks unsigned DLL injection, which also avoids startup crashes caused by game
   overlay tools (see [FAQ](#faq)).
@@ -135,7 +139,9 @@ Runs an update with no window, writes `auto.log` next to the exe, exits. It does
 
 | Key | Meaning |
 | --- | --- |
-| `repo=owner/name/branch/` | Upstream repository. Accepts a full GitHub URL too. **Change this one line when the repo moves** |
+| `repo.<key>=owner/name/branch/` | A registered upstream repository. `pdone`, `gy`, `xzh`, `wzh`, `sec`, `ikun` are pre-registered. Accepts a full GitHub URL |
+| `source.<name>=<key>:<path>` | A source: repository key + its path. Without the `key:` part it uses the default repository |
+| `defaults=<version>` | Which built-in source list has already been merged into this file. Do not edit by hand |
 | `proxies=prefix1,prefix2,...` | Mirror prefixes, tried in order; empty means the built-in list |
 | `outdir=...` | Output folder |
 | `source.<name>=<path>` | Source path inside the upstream repo |

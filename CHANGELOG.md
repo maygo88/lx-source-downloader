@@ -4,6 +4,32 @@ All notable changes to this project are documented here. The format loosely foll
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [1.2.4] — 2026-11-24
+
+### Added
+
+- **Multiple upstream repositories.** `config.ini` now maps short keys to repositories
+  (`repo.gy=guoyue2010/lxmusic-/main/`), and a source entry is written `<key>:<path>`, so a
+  single list can mix sources from several repositories. `repo.pdone`, `gy`, `xzh`, `wzh`,
+  `sec` and `ikun` are pre-registered.
+- **Fifteen additional sources**, verified downloadable on 2026-11-24, from
+  `guoyue2010/lxmusic-` (7.1 k stars), `xzh767/lxmusic-source-all`, `wzh15802/lxmusic` and
+  `shellsec/lx-music-source`. They ship unchecked; tick the ones you want.
+- Upgrading now merges newly added built-in sources into an existing `config.ini`
+  (tracked by a `defaults=` stamp), so users do not have to delete their config to see them.
+
+### Fixed
+
+- **Legitimate small sources were rejected as invalid content.** The 5 KB minimum is gone;
+  a downloaded file is now accepted when it carries a userscript header (`@name` /
+  `==UserScript==`). Real sources exist at 1.5 KB and 2.0 KB.
+- Paths containing Chinese characters, spaces or brackets are now percent-encoded per segment;
+  without this, most of the additional sources simply failed to download.
+
+### Changed
+
+- The default list grows from 8 to 23 entries: 8 ticked, 15 optional.
+
 ## [1.2.3] — 2026-11-24
 
 ### Fixed
@@ -117,6 +143,7 @@ First public release.
 - Windows-only (WinForms + .NET Framework).
 - Default upstream repository is `pdone/lx-music-source`; mirrors need occasional maintenance.
 
+[1.2.4]: https://github.com/maygo88/lx-source-downloader/compare/v1.2.3...v1.2.4
 [1.2.3]: https://github.com/maygo88/lx-source-downloader/compare/v1.2.2...v1.2.3
 [1.2.2]: https://github.com/maygo88/lx-source-downloader/compare/v1.2.1...v1.2.2
 [1.2.1]: https://github.com/maygo88/lx-source-downloader/compare/v1.2.0...v1.2.1
