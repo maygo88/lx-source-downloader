@@ -4,6 +4,28 @@ All notable changes to this project are documented here. The format loosely foll
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [1.2.3] — 2026-11-24
+
+### Fixed
+
+- **One deleted source no longer stalls the whole update.** The mirror health check probed
+  `lx/latest.js`; when the upstream author removed the `lx/` directory, every mirror answered 404
+  and the app reported "all mirrors unavailable", sending users to debug their network. The check
+  now reads `README.md` from the repository root, and 404 is no longer confused with a dead mirror.
+- **HTTP 404 is reported for what it is.** A missing source now shows `上游已移除` / removed upstream,
+  the log says which `source.<name>` line to delete, and the remaining sources keep updating.
+- **A failed source is no longer displayed as "not downloaded".** Refreshing the list after a run
+  used to overwrite `失败` / `无效内容` / `上游已移除` with `未下载`, which made a failed download look
+  like one that never happened.
+
+### Changed
+
+- Built-in mirror list refreshed from live measurements: dropped `ghproxy.net`, `gh.llkk.cc` and
+  `github.moeyy.xyz` (all timing out) in favour of `ghfast.top` and `gh-proxy.com`.
+- The upstream repository and the mirror list are now configurable: `config.ini` accepts `repo=`
+  and `proxies=`, so a renamed repository or a dead mirror can be fixed without a new build.
+- Default source list drops the deleted `lx` and adds `feichangdao`.
+
 ## [1.2.2] — 2026-11-18
 
 ### Fixed
@@ -95,6 +117,7 @@ First public release.
 - Windows-only (WinForms + .NET Framework).
 - Default upstream repository is `pdone/lx-music-source`; mirrors need occasional maintenance.
 
+[1.2.3]: https://github.com/maygo88/lx-source-downloader/compare/v1.2.2...v1.2.3
 [1.2.2]: https://github.com/maygo88/lx-source-downloader/compare/v1.2.1...v1.2.2
 [1.2.1]: https://github.com/maygo88/lx-source-downloader/compare/v1.2.0...v1.2.1
 [1.2.0]: https://github.com/maygo88/lx-source-downloader/releases/tag/v1.2.0

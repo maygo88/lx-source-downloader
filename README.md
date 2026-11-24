@@ -44,7 +44,7 @@ custom sources — and reads/writes the sources **already installed** in your LX
 
 ## Features
 
-- **One exe, under 50 KB, no installer, no runtime download.** Built against .NET Framework 4.8,
+- **One exe, about 50 KB, no installer, no runtime download.** Built against .NET Framework 4.8,
   which ships with Windows 10/11. Copy the folder to another PC and double-click.
 - **Content-hash updates.** Every source is downloaded and compared by SHA-256 with the previous copy:
   unchanged sources are not rewritten, changed ones replace exactly one file.
@@ -135,6 +135,8 @@ Runs an update with no window, writes `auto.log` next to the exe, exits. It does
 
 | Key | Meaning |
 | --- | --- |
+| `repo=owner/name/branch/` | Upstream repository. Accepts a full GitHub URL too. **Change this one line when the repo moves** |
+| `proxies=prefix1,prefix2,...` | Mirror prefixes, tried in order; empty means the built-in list |
 | `outdir=...` | Output folder |
 | `source.<name>=<path>` | Source path inside the upstream repo |
 | `check.<name>=1\|0` | Whether the row is ticked (persisted) |
@@ -206,7 +208,14 @@ deliberately refuses to downgrade. Delete the file locally and re-run if you rea
 
 **The upstream repository moved.**
 
-Change the `Repo` constant at the top of `src/LxSourceDownloader.cs` and rebuild.
+Edit `repo=` in `config.ini` (next to the exe) — no rebuild needed. It accepts `owner/name/branch/`
+or a full GitHub URL.
+
+**A source shows 上游已移除 / "removed upstream".**
+
+The author deleted it from the repository (HTTP 404), which is not a network problem. Delete that
+`source.<name>` line in `config.ini` and run *Check & update* again; the other sources are
+unaffected.
 
 ## How this project is built
 

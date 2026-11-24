@@ -55,9 +55,9 @@
 
 ## 能力清单
 
-- **单文件不到 50 KB，免安装**：基于 Windows 10/11 自带的 .NET Framework 4.8，不下载任何运行时。
+- **单文件约 50 KB，免安装**：基于 Windows 10/11 自带的 .NET Framework 4.8，不下载任何运行时。
 - **内容哈希更新**：下载后计算 SHA-256，与本地记录比对；没变的不写盘，变了的只替换那一个文件。
-- **加速站调度**：5 个镜像依次探测（`gh-proxy.org`、`ghproxy.net`、`gh.llkk.cc`、`github.moeyy.xyz`、直连），
+- **加速站调度**：内置 4 个镜像依次探测（`gh-proxy.org`、`ghfast.top`、`gh-proxy.com`、直连），
   记住第一个可用的；失败自动重新探测。
 - **内容校验**：小于 5 KB 或开头是 `<`（错误页）的响应直接丢弃，不会把 HTML 存成 `.js`。
 - **洛雪联动**：读取/写入 `%APPDATA%\lx-music-desktop\LxDatas\user_api.json`；缺失的音源会自动新增
@@ -130,11 +130,15 @@
 
 | 情形 | 结果 |
 | --- | --- |
-| 首次运行 | 8 个全部「已下载」 |
-| 立刻再点一次 | 8 个全部「已是最新」，文件时间戳不变 |
+| 首次运行 | 勾选的音源全部「已下载」 |
+| 立刻再点一次 | 全部「已是最新」，文件时间戳不变 |
 | 作者更新了某个音源 | 只有那一个「已更新」，其余仍「已是最新」 |
-| 加速站返回 404 页面 | 内容校验拦下，记为「无效内容」，不会写盘 |
-| 所有加速站都失败 | 该条「失败」，日志给出原因 |
+| 作者把某个音源删了（HTTP 404） | 该条「上游已移除」，**其余音源照常更新**；日志会提示删掉 `source.<名字>` 那一行 |
+| 镜像返回错误页 | 内容校验拦下，记为「无效内容」，不会写盘 |
+| 所有镜像都失败 | 该条「失败」，日志给出具体原因（超时 / HTTP 状态码） |
+
+> 404 和「镜像挂了」是两件完全不同的事：前者说明上游仓库里没有这个文件（换镜像也没用），
+> 后者说明这条线路不通（换镜像有用）。旧版把两者混为一谈，于是一个音源被删就会让整批停摆。
 
 ### 2. 加速站调度
 
@@ -142,14 +146,15 @@
 
 ```
 https://gh-proxy.org/raw.githubusercontent.com/
-https://ghproxy.net/raw.githubusercontent.com/
-https://gh.llkk.cc/raw.githubusercontent.com/
-https://github.moeyy.xyz/raw.githubusercontent.com/
-https://raw.githubusercontent.com/            ← 直连，通常最不稳定
+https://ghfast.top/raw.githubusercontent.com/
+https://gh-proxy.com/raw.githubusercontent.com/
+https://raw.githubusercontent.com/            ← 直连，有时反而最快
 ```
 
-单个请求 20 秒超时、探测 6 秒超时。若当前站中途失效，会清空缓存重新探测一次。
-镜像会不定期失效，欢迎 PR 更新这份列表（见[参与贡献](#参与贡献)）。
+健康检查读的是仓库根目录的 `README.md`（它一定存在），而不是某个具体音源——否则作者删掉那个音源，
+所有镜像都会被误判成不可用。单个请求 20 秒超时、探测 10 秒超时。
+
+镜像失效很快，**不需要重新编译**：在 `config.ini` 里改 `proxies=` 一行即可，逗号分隔。
 
 ### 3. 与洛雪联动
 
@@ -260,15 +265,21 @@ LxSourceDownloader.exe /auto
 
 ```ini
 # 洛雪音源下载器配置，可手动修改
+# repo = 上游仓库，owner/name/branch/；仓库搬家时改这里即可，不用等新版本
+repo=pdone/lx-music-source/main/
+# proxies = 镜像前缀，逗号分隔（留空则用内置列表）；镜像失效时改这里
+proxies=https://gh-proxy.org/raw.githubusercontent.com/,https://raw.githubusercontent.com/
 outdir=D:\Music\lx-sources
-source.lx=lx/latest.js
-check.lx=1
-hash.lx=79a5c470…
-time.lx=2026-11-16 09:53:00
+source.xinghai=xinghai/latest.js
+check.xinghai=1
+hash.xinghai=79a5c470…
+time.xinghai=2026-11-16 09:53:00
 ```
 
 | 键 | 含义 |
 | --- | --- |
+| `repo=owner/name/branch/` | 上游仓库；也接受完整 GitHub 地址。**仓库改名/换分支时只改这一行** |
+| `proxies=前缀1,前缀2,...` | 镜像前缀列表，按顺序尝试；留空则用内置的 4 个 |
 | `outdir=...` | 保存位置（绝对路径） |
 | `source.<名字>=<路径>` | 音源在仓库里的相对路径 |
 | `check.<名字>=1\|0` | 该行是否勾选，下次启动沿用 |
@@ -369,10 +380,11 @@ A：只写本地存在 `.js` 文件的音源。剩下的若状态是「未下载
 错误页，日志里会写 `内容无效（xxx 字节），已跳过`），就没有内容可写。先「检查并更新」补齐，再同步。
 
 **Q：上游仓库换地址了怎么办？**
-A：改 `src/LxSourceDownloader.cs` 顶部的 `Repo` 常量与 `Api` 常量，重新构建。
+A：改 `config.ini` 里的 `repo=` 一行即可，不用重新编译：`repo=owner/name/branch/`（也接受完整 GitHub 地址）。
+该文件在 exe 同目录，改完重开程序生效。
 
 **Q：镜像全部失效？**
-A：改 `Proxies` 数组，或用「保存位置」配合自己下载。欢迎提 PR 更新可用镜像。
+A：改 `config.ini` 里的 `proxies=` 一行（逗号分隔的前缀列表），同样不用重新编译。欢迎提 PR 更新内置列表。
 
 **Q：日志和崩溃信息在哪？**
 A：界面下方日志框；静默模式看 `auto.log`；异常堆栈写 `crash.log`（正常不生成）。

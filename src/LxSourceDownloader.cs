@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Diagnostics;
@@ -47,6 +47,27 @@ namespace LxSourceDownloader
         public string Size;
         public string Time;
         public Color Color;
+    }
+
+    /// <summary>
+    /// 带 HTTP 状态码的下载失败。用来区分两种完全不同的情况：
+    /// 404 是「上游没有这个文件」，其余是「镜像/网络这次不行」。
+    /// </summary>
+    internal sealed class HttpStatusException : Exception
+    {
+        public readonly int Status;
+
+        public HttpStatusException(int status) : base("HTTP " + status)
+        {
+            Status = status;
+        }
+    }
+
+    internal sealed class SourceFetchResult
+    {
+        public byte[] Data;
+        public bool NotFound;
+        public string Error;
     }
 
     internal static class Program
@@ -166,31 +187,38 @@ namespace LxSourceDownloader
 
     internal sealed class MainForm : Form
     {
-        private const string Repo = "pdone/lx-music-source/main/";
-        private const string Api = "https://api.github.com/repos/pdone/lx-music-source/contents/";
+        // 上游仓库的默认位置，格式 owner/name/branch/。可在 config.ini 用 repo= 覆盖，
+        // 这样仓库改名/换分支时用户不必等新版本。
+        private const string DefaultRepo = "pdone/lx-music-source/main/";
         private const string AppTitle = "洛雪音源下载器 / LX Source Downloader";
         private static readonly string Version = typeof(Program).Assembly.GetName().Version.ToString(3);
 
-        private static readonly string[] Proxies = new string[]
+        // 镜像失效很快，这里只保留当前实测可用的几个；config.ini 的 proxies= 可整体替换。
+        private static readonly string[] DefaultProxies = new string[]
         {
             "https://gh-proxy.org/raw.githubusercontent.com/",
-            "https://ghproxy.net/raw.githubusercontent.com/",
-            "https://gh.llkk.cc/raw.githubusercontent.com/",
-            "https://github.moeyy.xyz/raw.githubusercontent.com/",
+            "https://ghfast.top/raw.githubusercontent.com/",
+            "https://gh-proxy.com/raw.githubusercontent.com/",
             "https://raw.githubusercontent.com/"
         };
 
         private static readonly string[,] DefaultSources = new string[,]
         {
-            { "lx", "lx/latest.js" },
             { "xinghai", "xinghai/latest.js" },
             { "qingliang", "qingliang/latest.js" },
             { "suyin", "suyin/latest.js" },
             { "huanyin", "huanyin/latest.js" },
             { "changqing", "changqing/latest.js" },
             { "fish", "fish/latest.js" },
-            { "xinglan", "xinglan/latest.js" }
+            { "xinglan", "xinglan/latest.js" },
+            { "feichangdao", "feichangdao/latest.js" }
         };
+
+        private string _repo = DefaultRepo;
+        private string _api = RepoApi(DefaultRepo);
+        private List<string> _proxies = new List<string>(DefaultProxies);
+        // 探测 README.md 时拿到 404：说明仓库/分支路径本身不对，不是镜像挂了。
+        private bool _repoMissing;
 
         private readonly List<SourceItem> _items = new List<SourceItem>();
         private readonly Dictionary<string, string> _hash = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
@@ -465,11 +493,26 @@ namespace LxSourceDownloader
                 {
                     lvi.SubItems[3].Text = "-";
                     lvi.SubItems[4].Text = "-";
-                    lvi.SubItems[1].Text = "未下载";
-                    lvi.ForeColor = Color.Black;
+                    // 上一次运行给出的结论（失败 / 上游已移除 / 无效内容）不要被抹成「未下载」，
+                    // 否则一次下载失败看起来就像从没下载过。
+                    if (!IsResultStatus(lvi.SubItems[1].Text))
+                    {
+                        lvi.SubItems[1].Text = "未下载";
+                        lvi.ForeColor = Color.Black;
+                    }
                 }
                 UpdateLxCell(lvi, it);
             }
+        }
+
+        /// <summary>
+        /// 「这次运行得到的结论」型状态：文件可能不存在，但这一行仍然有意义，
+        /// 不能被文件状态覆盖掉。
+        /// </summary>
+        private static bool IsResultStatus(string status)
+        {
+            return status == "失败" || status == "无效内容" || status == "上游已移除"
+                || status == "导出失败" || status == "无法导出";
         }
 
         private void SetAllChecked(bool value)
@@ -689,8 +732,16 @@ namespace LxSourceDownloader
             if (needNet)
             {
                 _deadProxies.Clear();
+                _repoMissing = false;
                 bw.ReportProgress(-1, "正在探测可用加速站…");
                 proxy = EnsureProxy();
+                if (_repoMissing)
+                {
+                    r.Error = "上游仓库不存在：" + _repo + "（HTTP 404）。可能是仓库改名、删库或默认分支变了——"
+                        + "在 config.ini 里用 repo=owner/name/branch/ 指向新位置即可，不用等新版本。";
+                    bw.ReportProgress(-1, r.Error);
+                    return;
+                }
                 if (proxy == null)
                 {
                     // 探测只是加速手段：真正的下载会带着 20 秒超时把所有镜像再试一遍，
@@ -753,9 +804,26 @@ namespace LxSourceDownloader
                 try
                 {
                     bw.ReportProgress(-1, "[" + it.Name + "] 下载中…");
-                    byte[] data = FetchWithFallback(proxy, it.Path);
+                    SourceFetchResult fr = FetchSource(proxy, it.Path);
                     proxy = _workingProxy;
 
+                    if (fr.NotFound)
+                    {
+                        // 404 是「上游删了这个音源」，不是网络问题：明确告诉用户该删哪一行。
+                        r.Failed++;
+                        iu.Status = "上游已移除";
+                        iu.Size = "-";
+                        iu.Time = "-";
+                        iu.Color = Color.FromArgb(140, 100, 20);
+                        bw.ReportProgress(-1, "[" + it.Name + "] 上游仓库里没有 " + it.Path
+                            + "（HTTP 404），大概率已被作者删除；可以在 config.ini 里删掉 source." + it.Name + " 这一行");
+                        bw.ReportProgress(-1, iu);
+                        done++;
+                        bw.ReportProgress(done * 100 / total, (object)null);
+                        continue;
+                    }
+
+                    byte[] data = fr.Data;
                     if (data == null)
                     {
                         r.Failed++;
@@ -763,7 +831,8 @@ namespace LxSourceDownloader
                         iu.Size = "-";
                         iu.Time = "-";
                         iu.Color = Color.FromArgb(192, 28, 40);
-                        bw.ReportProgress(-1, "[" + it.Name + "] 失败：没有任何加速站可用");
+                        bw.ReportProgress(-1, "[" + it.Name + "] 失败："
+                            + (string.IsNullOrEmpty(fr.Error) ? "所有加速站都不可用" : fr.Error));
                         bw.ReportProgress(-1, iu);
                         done++;
                         bw.ReportProgress(done * 100 / total, (object)null);
@@ -835,8 +904,9 @@ namespace LxSourceDownloader
             string json = null;
             string[] attempts = new string[]
             {
-                Api,
-                "https://gh-proxy.org/https://api.github.com/repos/pdone/lx-music-source/contents/"
+                _api,
+                "https://gh-proxy.org/" + _api,
+                "https://ghfast.top/" + _api
             };
             foreach (string u in attempts)
             {
@@ -907,25 +977,55 @@ namespace LxSourceDownloader
 
         // ---------------- network ----------------
 
+        /// <summary>
+        /// 把用户填的仓库地址规范成 owner/name/branch/。接受 "owner/name"、
+        /// "owner/name/dev"、完整 HTTPS 地址，甚至带 .git 后缀。
+        /// </summary>
+        private static string NormalizeRepo(string repo)
+        {
+            if (string.IsNullOrEmpty(repo)) return DefaultRepo;
+            string r = repo.Trim().Replace('\\', '/');
+            int at = r.IndexOf("github.com/", StringComparison.OrdinalIgnoreCase);
+            if (at >= 0) r = r.Substring(at + "github.com/".Length);
+            if (r.EndsWith(".git", StringComparison.OrdinalIgnoreCase)) r = r.Substring(0, r.Length - 4);
+            string[] parts = r.Split(new char[] { '/' }, StringSplitOptions.RemoveEmptyEntries);
+            if (parts.Length < 2) return DefaultRepo;
+            string branch = parts.Length >= 3 ? parts[2] : "main";
+            return parts[0] + "/" + parts[1] + "/" + branch + "/";
+        }
+
+        private static string RepoApi(string repo)
+        {
+            string[] parts = NormalizeRepo(repo).Split(new char[] { '/' }, StringSplitOptions.RemoveEmptyEntries);
+            return "https://api.github.com/repos/" + parts[0] + "/" + parts[1] + "/contents/";
+        }
+
         private string EnsureProxy()
         {
             if (_workingProxy != null && !_deadProxies.Contains(_workingProxy)) return _workingProxy;
+            bool sawNotFound = false;
             foreach (string p in CandidateProxies(null))
             {
                 try
                 {
-                    // 10 秒而不是 6 秒：实测可用的镜像正常就要 4 秒左右，6 秒在高峰期会误判。
-                    byte[] probe = Fetch(p + Repo + "lx/latest.js", 10000);
-                    if (probe != null && probe.Length > 5000)
+                    // 用仓库根目录的 README.md 做健康检查：它一定在，不依赖某个音源是否被作者删掉。
+                    // 旧版拿 lx/latest.js 探测，作者删掉 lx 之后所有镜像都被误判成「不可用」。
+                    byte[] probe = Fetch(p + _repo + "README.md", 10000);
+                    if (probe != null && probe.Length > 500)
                     {
                         _workingProxy = p;
                         return p;
                     }
                 }
+                catch (HttpStatusException hx)
+                {
+                    if (hx.Status == 404 || hx.Status == 410) sawNotFound = true;
+                }
                 catch
                 {
                 }
             }
+            _repoMissing = sawNotFound;
             return null;
         }
 
@@ -937,7 +1037,7 @@ namespace LxSourceDownloader
             List<string> all = new List<string>();
             AddProxyCandidate(all, preferred);
             AddProxyCandidate(all, _workingProxy);
-            foreach (string p in Proxies) AddProxyCandidate(all, p);
+            foreach (string p in _proxies) AddProxyCandidate(all, p);
 
             List<string> alive = new List<string>();
             foreach (string p in all)
@@ -957,28 +1057,42 @@ namespace LxSourceDownloader
             list.Add(proxy);
         }
 
-        private byte[] FetchWithFallback(string proxy, string path)
+        private SourceFetchResult FetchSource(string proxy, string path)
         {
+            SourceFetchResult result = new SourceFetchResult();
             foreach (string p in CandidateProxies(proxy))
             {
                 try
                 {
-                    byte[] d = Fetch(p + Repo + path, 20000);
+                    byte[] d = Fetch(p + _repo + path, 20000);
                     if (d != null && d.Length > 0)
                     {
                         _workingProxy = p;
-                        return d;
+                        result.Data = d;
+                        return result;
                     }
                 }
-                catch
+                catch (HttpStatusException hx)
                 {
+                    result.Error = "HTTP " + hx.Status;
+                    if (hx.Status == 404 || hx.Status == 410)
+                    {
+                        // 所有镜像读的是同一个仓库，这个文件不存在，换镜像也没用。
+                        result.NotFound = true;
+                        return result;
+                    }
+                    // 403 / 429 / 5xx 属于镜像自身的问题，拉黑后换下一个。
+                }
+                catch (Exception ex)
+                {
+                    result.Error = ex.Message;
                 }
                 // 只有真正下载失败才拉黑，探测超时不算——探测只是优化，不是判据。
                 _deadProxies.Add(p);
             }
 
             _workingProxy = null;
-            return null;
+            return result;
         }
 
         private static byte[] Fetch(string url, int timeoutMs)
@@ -991,10 +1105,26 @@ namespace LxSourceDownloader
             req.AllowAutoRedirect = true;
             req.AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate;
 
-            using (HttpWebResponse resp = (HttpWebResponse)req.GetResponse())
+            HttpWebResponse resp;
+            try
+            {
+                resp = (HttpWebResponse)req.GetResponse();
+            }
+            catch (WebException wex)
+            {
+                // HttpWebRequest 遇到 4xx/5xx 直接抛异常。把状态码取出来交给调用方，
+                // 否则 404（上游删了音源）会被当成镜像故障，误导用户去查网络。
+                HttpWebResponse err = wex.Response as HttpWebResponse;
+                if (err == null) throw;
+                int code = (int)err.StatusCode;
+                err.Close();
+                throw new HttpStatusException(code);
+            }
+
+            using (resp)
             {
                 if (resp.StatusCode != HttpStatusCode.OK)
-                    throw new WebException("HTTP " + (int)resp.StatusCode);
+                    throw new HttpStatusException((int)resp.StatusCode);
                 using (Stream s = resp.GetResponseStream())
                 using (MemoryStream ms = new MemoryStream())
                 {
@@ -1482,11 +1612,25 @@ namespace LxSourceDownloader
                     string[] lines = File.ReadAllLines(_configPath, Encoding.UTF8);
                     foreach (string line in lines)
                     {
+                        if (line.TrimStart().StartsWith("#")) continue;
                         int eq = line.IndexOf('=');
                         if (eq <= 0) continue;
                         string k = line.Substring(0, eq).Trim();
                         string v = line.Substring(eq + 1).Trim();
                         if (k.Equals("outdir", StringComparison.OrdinalIgnoreCase)) _outDir = v;
+                        else if (k.Equals("repo", StringComparison.OrdinalIgnoreCase)) _repo = NormalizeRepo(v);
+                        else if (k.Equals("proxies", StringComparison.OrdinalIgnoreCase))
+                        {
+                            List<string> list = new List<string>();
+                            foreach (string piece in v.Split(new char[] { ',', ';' }, StringSplitOptions.RemoveEmptyEntries))
+                            {
+                                string x = piece.Trim();
+                                if (x.Length == 0) continue;
+                                if (!x.EndsWith("/")) x += "/";
+                                AddProxyCandidate(list, x);
+                            }
+                            if (list.Count > 0) _proxies = list;
+                        }
                         else if (k.StartsWith("check.", StringComparison.OrdinalIgnoreCase)) _checkedCfg[k.Substring(6)] = (v == "1");
                         else if (k.StartsWith("hash.", StringComparison.OrdinalIgnoreCase)) _hash[k.Substring(5)] = v;
                         else if (k.StartsWith("time.", StringComparison.OrdinalIgnoreCase)) _time[k.Substring(5)] = v;
@@ -1502,6 +1646,8 @@ namespace LxSourceDownloader
                 {
                 }
             }
+
+            _api = RepoApi(_repo);
 
             if (_items.Count == 0)
             {
@@ -1526,6 +1672,10 @@ namespace LxSourceDownloader
                         _checkedCfg[((SourceItem)l.Tag).Name] = l.Checked;
                 }
                 sb.AppendLine("# 洛雪音源下载器配置，可手动修改");
+                sb.AppendLine("# repo = 上游仓库，owner/name/branch/；仓库搬家时改这里即可，不用等新版本");
+                sb.AppendLine("repo=" + _repo);
+                sb.AppendLine("# proxies = 镜像前缀，逗号分隔（留空则用内置列表）；镜像失效时改这里");
+                sb.AppendLine("proxies=" + string.Join(",", _proxies.ToArray()));
                 sb.AppendLine("outdir=" + _outDir);
                 foreach (SourceItem it in _items)
                 {
